@@ -23,7 +23,7 @@ Optional:
 """
 
 from functools import lru_cache
-from typing import Optional
+from typing import Any
 
 from configs.settings import settings
 
@@ -56,7 +56,7 @@ def _validate_supabase_config() -> None:
 
 
 @lru_cache(maxsize=1)
-def get_supabase_client():
+def get_supabase_client() -> Any:
     """
     Get a Supabase client using the anon key.
 
@@ -80,14 +80,16 @@ def get_supabase_client():
     _validate_supabase_config()
 
     try:
-        from supabase import create_client, Client
+        import supabase  # type: ignore
+
     except ImportError as e:
         raise ImportError(
-            "supabase-py package is not installed. "
-            "Install it with: pip install supabase"
+            "supabase-py package is not installed. " "Install it with: pip install supabase"
         ) from e
 
-    client: Client = create_client(
+    _supabase: Any = supabase  # type: ignore
+    create_client = _supabase.create_client
+    client = create_client(
         settings.supabase_url,
         settings.supabase_anon_key,
     )
@@ -95,7 +97,7 @@ def get_supabase_client():
 
 
 @lru_cache(maxsize=1)
-def get_supabase_admin_client():
+def get_supabase_admin_client() -> Any:
     """
     Get a Supabase client using the service role key.
 
@@ -128,14 +130,16 @@ def get_supabase_admin_client():
         )
 
     try:
-        from supabase import create_client, Client
+        import supabase  # type: ignore
+
     except ImportError as e:
         raise ImportError(
-            "supabase-py package is not installed. "
-            "Install it with: pip install supabase"
+            "supabase-py package is not installed. " "Install it with: pip install supabase"
         ) from e
 
-    client: Client = create_client(
+    _supabase: Any = supabase  # type: ignore
+    create_client = _supabase.create_client
+    client = create_client(
         settings.supabase_url,
         settings.supabase_service_role_key,
     )
