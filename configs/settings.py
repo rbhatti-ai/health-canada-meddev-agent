@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     database_url: Optional[str] = None
     redis_url: str = "redis://localhost:6379/0"
 
+    # Supabase Configuration
+    # Set these in .env or environment variables
+    # Example: SUPABASE_URL=https://your-project-id.supabase.co
+    supabase_url: Optional[str] = None
+    supabase_anon_key: Optional[str] = None
+    supabase_service_role_key: Optional[str] = None  # Server-side only, never expose to client
+
     # API Configuration
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -73,6 +80,11 @@ class Settings(BaseSettings):
     def use_pinecone(self) -> bool:
         """Determine if Pinecone should be used (production) or ChromaDB (local)."""
         return self.is_production and self.pinecone_api_key is not None
+
+    @property
+    def supabase_configured(self) -> bool:
+        """Check if Supabase credentials are configured."""
+        return self.supabase_url is not None and self.supabase_anon_key is not None
 
 
 @lru_cache()
