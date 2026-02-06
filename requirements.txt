@@ -1,3 +1,7 @@
-# Minimal dependencies for Vercel serverless
+# Requirements for Streamlit Cloud deployment
+streamlit>=1.31.0
+requests>=2.31.0
+
+# Also needed for Vercel API (minimal)
 fastapi>=0.109.0
 pydantic>=2.6.0
