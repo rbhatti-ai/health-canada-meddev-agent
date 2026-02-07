@@ -3,8 +3,8 @@ Streamlit UI for Health Canada Medical Device Regulatory Agent.
 Connects to Vercel API backend.
 """
 
-import streamlit as st
 import requests
+import streamlit as st
 
 # Configuration
 API_BASE_URL = "https://health-canada-meddev-agent.vercel.app"
@@ -55,7 +55,7 @@ def main():
                 st.success("✅ API Online")
             else:
                 st.error("❌ API Error")
-        except:
+        
             st.error("❌ API Offline")
 
     # Route to appropriate page
