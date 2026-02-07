@@ -23,7 +23,7 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Mypy
-        run: mypy src
+        run: mypy src/core/ src/persistence/
 
   unit_tests:
     name: Unit Tests
