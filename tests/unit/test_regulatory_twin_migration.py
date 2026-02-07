@@ -418,7 +418,19 @@ class TestDomainContent:
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not shutil.which("psql"), reason="psql not available (CI)")
+@pytest.mark.skipif(
+    (
+        subprocess.run(
+            ["psql", "-U", "meddev", "-d", "meddev_agent", "-c", "SELECT 1"],
+            capture_output=True,
+            timeout=3,
+        ).returncode
+        != 0
+        if shutil.which("psql")
+        else True
+    ),
+    reason="Local Postgres not available",
+)
 class TestLocalPostgresState:
     @pytest.mark.parametrize("table", TWIN_TABLES)
     def test_table_exists(self, table: str):
