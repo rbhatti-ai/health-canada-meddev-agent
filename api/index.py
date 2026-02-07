@@ -4,32 +4,35 @@ Core classification, pathway, and checklist endpoints only.
 (RAG/search requires separate deployment due to size limits)
 """
 
-from typing import Optional, List
+from enum import StrEnum
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from enum import Enum
+from pydantic import BaseModel
+
 
 # ============================================================================
 # Models (inline to avoid import issues)
 # ============================================================================
-
-class DeviceClass(str, Enum):
+class DeviceClass(StrEnum):
     CLASS_I = "I"
     CLASS_II = "II"
     CLASS_III = "III"
     CLASS_IV = "IV"
 
-class HealthcareSituation(str, Enum):
+
+class HealthcareSituation(StrEnum):
     CRITICAL = "critical"
     SERIOUS = "serious"
     NON_SERIOUS = "non_serious"
 
-class SaMDCategory(str, Enum):
+
+class SaMDCategory(StrEnum):
     TREAT = "treat"
     DIAGNOSE = "diagnose"
     DRIVE = "drive"
     INFORM = "inform"
+
 
 # IMDRF SaMD Classification Matrix
 SAMD_MATRIX = {
@@ -62,6 +65,7 @@ FEES_2024 = {
 # Request/Response Models
 # ============================================================================
 
+
 class DeviceInfoRequest(BaseModel):
     name: str
     description: str
@@ -69,17 +73,20 @@ class DeviceInfoRequest(BaseModel):
     manufacturer_name: str
     is_software: bool = False
     is_implantable: bool = False
-    contact_duration: Optional[str] = None
+    contact_duration: str | None = None
     is_active: bool = False
+
 
 class SaMDInfoRequest(BaseModel):
     healthcare_situation: HealthcareSituation
     significance: SaMDCategory
     uses_ml: bool = False
 
+
 class ClassifyRequest(BaseModel):
     device_info: DeviceInfoRequest
-    samd_info: Optional[SaMDInfoRequest] = None
+    samd_info: SaMDInfoRequest | None = None
+
 
 class ClassifyResponse(BaseModel):
     device_class: str
@@ -87,12 +94,14 @@ class ClassifyResponse(BaseModel):
     is_samd: bool
     rationale: str
     confidence: float
-    warnings: List[str] = []
+    warnings: list[str] = []
+
 
 class PathwayRequest(BaseModel):
     device_class: str
     is_software: bool = False
     has_mdel: bool = False
+
 
 class FeeBreakdown(BaseModel):
     mdel_fee: float
@@ -100,17 +109,20 @@ class FeeBreakdown(BaseModel):
     annual_fee: float
     total: float
 
+
 class PathwayStep(BaseModel):
     name: str
     description: str
-    duration_days: Optional[int] = None
+    duration_days: int | None = None
+
 
 class PathwayResponse(BaseModel):
     device_class: str
-    steps: List[PathwayStep]
+    steps: list[PathwayStep]
     fees: FeeBreakdown
     timeline_days_min: int
     timeline_days_max: int
+
 
 # ============================================================================
 # FastAPI App
@@ -134,6 +146,7 @@ app.add_middleware(
 # Endpoints
 # ============================================================================
 
+
 @app.get("/")
 def root():
     return {
@@ -142,9 +155,11 @@ def root():
         "endpoints": ["/health", "/api/v1/classify", "/api/v1/pathway", "/docs"],
     }
 
+
 @app.get("/health")
 def health():
     return {"status": "healthy", "service": "health-canada-meddev-agent"}
+
 
 @app.post("/api/v1/classify", response_model=ClassifyResponse)
 def classify_device(request: ClassifyRequest):
@@ -166,7 +181,9 @@ def classify_device(request: ClassifyRequest):
         )
 
         if samd.uses_ml:
-            warnings.append("ML-enabled device may require PCCP (Predetermined Change Control Plan)")
+            warnings.append(
+                "ML-enabled device may require PCCP (Predetermined Change Control Plan)"
+            )
 
         return ClassifyResponse(
             device_class=device_class.value,
@@ -201,6 +218,7 @@ def classify_device(request: ClassifyRequest):
         warnings=warnings,
     )
 
+
 @app.post("/api/v1/pathway", response_model=PathwayResponse)
 def get_pathway(request: PathwayRequest):
     """Get regulatory pathway with fees and timeline."""
@@ -213,36 +231,44 @@ def get_pathway(request: PathwayRequest):
 
     # MDEL Step
     if not request.has_mdel:
-        steps.append(PathwayStep(
-            name="Obtain MDEL",
-            description="Medical Device Establishment Licence application",
-            duration_days=30,
-        ))
+        steps.append(
+            PathwayStep(
+                name="Obtain MDEL",
+                description="Medical Device Establishment Licence application",
+                duration_days=30,
+            )
+        )
 
     # QMS Step (Class II-IV)
     if device_class != "I":
-        steps.append(PathwayStep(
-            name="ISO 13485 QMS Certificate",
-            description="Obtain quality management system certification",
-            duration_days=90,
-        ))
+        steps.append(
+            PathwayStep(
+                name="ISO 13485 QMS Certificate",
+                description="Obtain quality management system certification",
+                duration_days=90,
+            )
+        )
 
     # Cybersecurity (Software)
     if request.is_software:
-        steps.append(PathwayStep(
-            name="Cybersecurity Documentation",
-            description="Prepare cybersecurity risk assessment and SBOM",
-            duration_days=14,
-        ))
+        steps.append(
+            PathwayStep(
+                name="Cybersecurity Documentation",
+                description="Prepare cybersecurity risk assessment and SBOM",
+                duration_days=14,
+            )
+        )
 
     # MDL Step (Class II-IV)
     if device_class != "I":
         review_days = {"II": 15, "III": 75, "IV": 90}.get(device_class, 75)
-        steps.append(PathwayStep(
-            name=f"Submit MDL Application (Class {device_class})",
-            description=f"Medical Device Licence application - {review_days} day review",
-            duration_days=review_days,
-        ))
+        steps.append(
+            PathwayStep(
+                name=f"Submit MDL Application (Class {device_class})",
+                description=f"Medical Device Licence application - {review_days} day review",
+                duration_days=review_days,
+            )
+        )
 
     # Calculate fees
     mdel_fee = 0 if request.has_mdel else FEES_2024["mdel_application"]
@@ -275,6 +301,7 @@ def get_pathway(request: PathwayRequest):
         timeline_days_min=timeline_min,
         timeline_days_max=timeline_max,
     )
+
 
 def _get_risk_level(device_class: DeviceClass) -> str:
     return {
