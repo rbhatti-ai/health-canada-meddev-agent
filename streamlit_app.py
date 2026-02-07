@@ -55,7 +55,7 @@ def main():
                 st.success("✅ API Online")
             else:
                 st.error("❌ API Error")
-                except Exception:
+            except Exception:
                     st.error("❌ API Offline")
 
     # Route to appropriate page
