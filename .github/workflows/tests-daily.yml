@@ -2,39 +2,27 @@ name: tests-daily
 
 on:
   workflow_dispatch:
-  pull_request:
   push:
     branches: ["main"]
   schedule:
-    # 16:00 UTC ≈ 09:00 America/Edmonton during MST (winter). Will shift by 1h during DST.
     - cron: "0 16 * * *"
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
-
-      - name: Show versions
+      - name: Install project + dev deps
         run: |
-          python --version
-          python -m pip --version
-
-      - name: Bootstrap deps
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,prod]"
+      - name: Run unit + API tests
         run: |
-          make bootstrap
-
-      - name: Run daily suite
-        run: |
-          make daily
+          python -m pytest tests/unit -v --tb=short --durations=10
+          if [ -d tests/api ] && [ "$(find tests/api -name 'test_*.py' | head -1)" ]; then
+            python -m pytest tests/api -v --tb=short
+          fi

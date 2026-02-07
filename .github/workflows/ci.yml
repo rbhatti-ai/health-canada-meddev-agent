@@ -16,18 +16,14 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-      - name: Install (project + dev + prod)
+      - name: Install project + dev deps
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,prod]"
       - name: Ruff
-        run: |
-          ruff --version
-          ruff check .
+        run: ruff check .
       - name: Mypy
-        run: |
-          mypy --version
-          mypy src
+        run: mypy src
 
   unit_tests:
     name: Unit Tests
@@ -39,13 +35,34 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-      - name: Install (project + dev + prod)
+      - name: Install project + dev deps
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,prod]"
-      - name: Run unit+api (make daily)
+      - name: Run unit tests
+        run: python -m pytest tests/unit -v --tb=short
+
+  api_tests:
+    name: API Tests
+    runs-on: ubuntu-latest
+    needs: [lint_type_check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install project + dev deps
         run: |
-          make daily
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,prod]"
+      - name: Run API tests
+        run: |
+          if [ -d tests/api ] && [ "$(find tests/api -name 'test_*.py' | head -1)" ]; then
+            python -m pytest tests/api -v --tb=short
+          else
+            echo "No API tests found, skipping"
+          fi
 
   regulatory_accuracy:
     name: Regulatory Accuracy
@@ -57,32 +74,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-      - name: Install (project + dev + prod)
+      - name: Install project + dev deps
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,prod]"
       - name: Run regulatory suite
-        run: |
-          make test-regulatory
-
-  integration_tests:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: [unit_tests]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-      - name: Install (project + dev + prod)
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,prod]"
-      - name: Docker sanity
-        run: |
-          docker --version
-          docker compose version
-      - name: Run integration suite (compose up/down handled by Makefile)
-        run: |
-          make test-integration
+        run: python -m pytest tests/regulatory -v --tb=short

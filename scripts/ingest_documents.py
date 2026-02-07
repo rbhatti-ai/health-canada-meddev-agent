@@ -4,23 +4,20 @@ Standalone document ingestion script.
 Ingests regulatory documents into ChromaDB vector store.
 """
 
-import os
-import sys
 import hashlib
-from pathlib import Path
-from datetime import datetime
-from typing import List, Dict, Any, Optional
 import re
+import sys
+from pathlib import Path
+from typing import Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import fitz  # PyMuPDF
-from docx import Document as DocxDocument
 import chromadb
+import fitz  # PyMuPDF
 from chromadb.config import Settings as ChromaSettings
+from docx import Document as DocxDocument
 from openai import OpenAI
-
 
 # Configuration
 CHUNK_SIZE = 1000
@@ -29,7 +26,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 COLLECTION_NAME = "health_canada_regulatory"
 
 
-def load_pdf(file_path: Path) -> Dict[str, Any]:
+def load_pdf(file_path: Path) -> dict[str, Any]:
     """Load a PDF file."""
     print(f"  Loading PDF: {file_path.name}")
     doc = fitz.open(file_path)
@@ -47,11 +44,11 @@ def load_pdf(file_path: Path) -> Dict[str, Any]:
             "file_name": file_path.name,
             "file_type": "pdf",
             "page_count": len(pages),
-        }
+        },
     }
 
 
-def load_docx(file_path: Path) -> Dict[str, Any]:
+def load_docx(file_path: Path) -> dict[str, Any]:
     """Load a DOCX file."""
     print(f"  Loading DOCX: {file_path.name}")
     doc = DocxDocument(file_path)
@@ -71,11 +68,11 @@ def load_docx(file_path: Path) -> Dict[str, Any]:
             "source": str(file_path),
             "file_name": file_path.name,
             "file_type": "docx",
-        }
+        },
     }
 
 
-def load_markdown(file_path: Path) -> Dict[str, Any]:
+def load_markdown(file_path: Path) -> dict[str, Any]:
     """Load a Markdown file."""
     print(f"  Loading MD: {file_path.name}")
     content = file_path.read_text(encoding="utf-8")
@@ -85,7 +82,7 @@ def load_markdown(file_path: Path) -> Dict[str, Any]:
             "source": str(file_path),
             "file_name": file_path.name,
             "file_type": "markdown",
-        }
+        },
     }
 
 
@@ -114,10 +111,10 @@ def detect_category(file_path: Path, content: str) -> str:
     return "other"
 
 
-def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
     """Split text into chunks with overlap."""
     # Normalize whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
 
     if len(text) <= chunk_size:
         return [text] if len(text) > 50 else []
@@ -135,7 +132,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
             search_region = text[search_start:end]
 
             # Find last sentence boundary
-            for sep in ['. ', '! ', '? ', '\n']:
+            for sep in [". ", "! ", "? ", "\n"]:
                 last_sep = search_region.rfind(sep)
                 if last_sep != -1:
                     end = search_start + last_sep + len(sep)
@@ -151,7 +148,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     return chunks
 
 
-def generate_embeddings(texts: List[str], client: OpenAI) -> List[List[float]]:
+def generate_embeddings(texts: list[str], client: OpenAI) -> list[list[float]]:
     """Generate embeddings for texts."""
     if not texts:
         return []
@@ -161,7 +158,7 @@ def generate_embeddings(texts: List[str], client: OpenAI) -> List[List[float]]:
     all_embeddings = []
 
     for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
+        batch = texts[i : i + batch_size]
         response = client.embeddings.create(
             model=EMBEDDING_MODEL,
             input=batch,
@@ -174,10 +171,14 @@ def generate_embeddings(texts: List[str], client: OpenAI) -> List[List[float]]:
 
 def main():
     # Source directory
-    source_dir = Path("/Users/rbhatti/Documents/Medical_Device_Regulatory_Hub/Perplexity approach/All previous documents via perplexity  stage 0/Regulatory KB")
+    source_dir = Path(
+        "/Users/rbhatti/Documents/Medical_Device_Regulatory_Hub/Perplexity approach/All previous documents via perplexity  stage 0/Regulatory KB"
+    )
 
     # Also include root level files
-    root_dir = Path("/Users/rbhatti/Documents/Medical_Device_Regulatory_Hub/Perplexity approach/All previous documents via perplexity  stage 0")
+    root_dir = Path(
+        "/Users/rbhatti/Documents/Medical_Device_Regulatory_Hub/Perplexity approach/All previous documents via perplexity  stage 0"
+    )
 
     # Vector store directory
     vectorstore_dir = Path("/Users/rbhatti/health-canada-meddev-agent/data/vectorstore")
@@ -201,7 +202,7 @@ def main():
     # Delete existing collection if exists, then create new
     try:
         chroma_client.delete_collection(COLLECTION_NAME)
-    except:
+    except Exception:
         pass
 
     collection = chroma_client.create_collection(
@@ -259,7 +260,9 @@ def main():
 
             # Create entries for each chunk
             for i, chunk in enumerate(chunks):
-                chunk_id = f"{doc_path.stem}_{hashlib.md5(chunk[:100].encode()).hexdigest()[:8]}_{i}"
+                chunk_id = (
+                    f"{doc_path.stem}_{hashlib.md5(chunk[:100].encode()).hexdigest()[:8]}_{i}"
+                )
 
                 metadata = {
                     "source": str(doc_path),

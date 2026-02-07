@@ -4,7 +4,6 @@ Uses pydantic-settings for type-safe environment variable loading.
 """
 
 from functools import lru_cache
-from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,8 +20,8 @@ class Settings(BaseSettings):
     )
 
     # LLM API Keys
-    anthropic_api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
+    anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
 
     # Embedding Configuration
     embedding_model: str = "text-embedding-3-small"
@@ -33,28 +32,26 @@ class Settings(BaseSettings):
     chroma_collection_name: str = "health_canada_regulatory"
 
     # Vector Store - Pinecone (Production)
-    pinecone_api_key: Optional[str] = None
+    pinecone_api_key: str | None = None
     pinecone_environment: str = "us-east-1"
     pinecone_index_name: str = "health-canada-meddev"
 
     # Database
-    database_url: Optional[str] = None
+    database_url: str | None = None
     redis_url: str = "redis://localhost:6379/0"
 
     # Supabase Configuration
     # Set these in .env or environment variables
     # Example: SUPABASE_URL=https://your-project-id.supabase.co
-    supabase_url: Optional[str] = None
-    supabase_anon_key: Optional[str] = None
-    supabase_service_role_key: Optional[str] = None  # Server-side only, never expose to client
+    supabase_url: str | None = None
+    supabase_anon_key: str | None = None
+    supabase_service_role_key: str | None = None  # Server-side only, never expose to client
 
     # API Configuration
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     api_debug: bool = False
-    api_cors_origins: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8501"]
-    )
+    api_cors_origins: list[str] = Field(default=["http://localhost:3000", "http://localhost:8501"])
 
     # Application Settings
     log_level: str = "INFO"
@@ -87,7 +84,7 @@ class Settings(BaseSettings):
         return self.supabase_url is not None and self.supabase_anon_key is not None
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()

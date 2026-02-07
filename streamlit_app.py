@@ -3,8 +3,8 @@ Streamlit UI for Health Canada Medical Device Regulatory Agent.
 Connects to Vercel API backend.
 """
 
-import streamlit as st
 import requests
+import streamlit as st
 
 # Configuration
 API_BASE_URL = "https://health-canada-meddev-agent.vercel.app"
@@ -43,9 +43,13 @@ def main():
 
         st.divider()
         st.markdown("### Quick Links")
-        st.markdown("- [Health Canada Medical Devices](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices.html)")
+        st.markdown(
+            "- [Health Canada Medical Devices](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices.html)"
+        )
         st.markdown("- [MDALL Database](https://health-products.canada.ca/mdall-limh/)")
-        st.markdown("- [Fee Schedule](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices/fees.html)")
+        st.markdown(
+            "- [Fee Schedule](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices/fees.html)"
+        )
 
         st.divider()
         st.markdown("### API Status")
@@ -55,7 +59,7 @@ def main():
                 st.success("✅ API Online")
             else:
                 st.error("❌ API Error")
-        except:
+        except Exception:
             st.error("❌ API Offline")
 
     # Route to appropriate page
@@ -71,10 +75,12 @@ def render_classification_page():
     """Render the device classification interface."""
     st.header("🔬 Device Classification")
 
-    st.markdown("""
+    st.markdown(
+        """
     Enter your device information to determine its Health Canada classification.
     The classification determines regulatory requirements, review timelines, and fees.
-    """)
+    """
+    )
 
     col1, col2 = st.columns(2)
 
@@ -170,26 +176,28 @@ def render_classification_page():
                         with col1:
                             st.metric("Device Class", f"Class {result['device_class']}")
                         with col2:
-                            st.metric("Risk Level", result['risk_level'])
+                            st.metric("Risk Level", result["risk_level"])
                         with col3:
                             st.metric("Confidence", f"{result['confidence']*100:.0f}%")
 
                         st.subheader("Classification Rationale")
-                        st.info(result['rationale'])
+                        st.info(result["rationale"])
 
-                        if result.get('warnings'):
+                        if result.get("warnings"):
                             st.subheader("⚠️ Warnings")
-                            for warning in result['warnings']:
+                            for warning in result["warnings"]:
                                 st.warning(warning)
 
                         # Show next steps
                         st.subheader("Next Steps")
-                        st.markdown(f"""
+                        st.markdown(
+                            f"""
                         Based on **Class {result['device_class']}** classification:
                         1. Go to **Regulatory Pathway** to see required steps
                         2. Review fee requirements
                         3. Prepare documentation
-                        """)
+                        """
+                        )
                     else:
                         st.error(f"API Error: {response.text}")
 
@@ -201,10 +209,12 @@ def render_pathway_page():
     """Render the regulatory pathway interface."""
     st.header("🗺️ Regulatory Pathway")
 
-    st.markdown("""
+    st.markdown(
+        """
     Get a step-by-step regulatory pathway with timelines and fees
     based on your device classification.
-    """)
+    """
+    )
 
     col1, col2 = st.columns(2)
 
@@ -240,7 +250,7 @@ def render_pathway_page():
 
                     # Fee summary
                     st.subheader("💰 Fee Summary (2024 CAD)")
-                    fees = result['fees']
+                    fees = result["fees"]
 
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
@@ -254,14 +264,16 @@ def render_pathway_page():
 
                     # Timeline
                     st.subheader("⏱️ Timeline")
-                    st.info(f"Estimated: **{result['timeline_days_min']} - {result['timeline_days_max']} days**")
+                    st.info(
+                        f"Estimated: **{result['timeline_days_min']} - {result['timeline_days_max']} days**"
+                    )
 
                     # Steps
                     st.subheader("📝 Regulatory Steps")
-                    for i, step in enumerate(result['steps'], 1):
+                    for i, step in enumerate(result["steps"], 1):
                         with st.expander(f"Step {i}: {step['name']}", expanded=True):
-                            st.write(step['description'])
-                            if step.get('duration_days'):
+                            st.write(step["description"])
+                            if step.get("duration_days"):
                                 st.caption(f"⏱️ Duration: ~{step['duration_days']} days")
 
                 else:
@@ -275,7 +287,8 @@ def render_about_page():
     """Render the about page."""
     st.header("ℹ️ About This Tool")
 
-    st.markdown("""
+    st.markdown(
+        """
     ### Health Canada Medical Device Regulatory Agent
 
     This AI-powered tool helps medical device manufacturers navigate Health Canada's
@@ -314,7 +327,8 @@ def render_about_page():
     **API**: [health-canada-meddev-agent.vercel.app](https://health-canada-meddev-agent.vercel.app)
 
     **Source**: [GitHub](https://github.com/rbhatti-ai/health-canada-meddev-agent)
-    """)
+    """
+    )
 
 
 if __name__ == "__main__":
