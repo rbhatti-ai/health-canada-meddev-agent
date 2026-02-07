@@ -29,7 +29,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 COLLECTION_NAME = "health_canada_regulatory"
 
 
-def load_pdf(file_path: Path) -> dict[str, Any]:
+def load_pdf(file_path: Path) -> [str, Any]:
     """Load a PDF file."""
     print(f"  Loading PDF: {file_path.name}")
     doc = fitz.open(file_path)
@@ -51,7 +51,7 @@ def load_pdf(file_path: Path) -> dict[str, Any]:
     }
 
 
-def load_docx(file_path: Path) -> dict[str, Any]:
+def load_docx(file_path: Path) -> [str, Any]:
     """Load a DOCX file."""
     print(f"  Loading DOCX: {file_path.name}")
     doc = DocxDocument(file_path)
@@ -75,7 +75,7 @@ def load_docx(file_path: Path) -> dict[str, Any]:
     }
 
 
-def load_markdown(file_path: Path) -> dict[str, Any]:
+def load_markdown(file_path: Path) -> [str, Any]:
     """Load a Markdown file."""
     print(f"  Loading MD: {file_path.name}")
     content = file_path.read_text(encoding="utf-8")
