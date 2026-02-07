@@ -9,28 +9,33 @@ Provides endpoints for:
 - Chat interface
 """
 
-from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from configs.settings import settings
-from src.core.models import DeviceClass, HealthcareSituation, SaMDCategory
+from src.agents.regulatory_agent import SimpleRegulatoryAgent
+from src.core.checklist import generate_checklist
 from src.core.classification import classify_device
+from src.core.models import (
+    ClassificationResult,
+    DeviceClass,
+    DeviceInfo,
+    HealthcareSituation,
+    SaMDCategory,
+    SaMDInfo,
+)
 from src.core.pathway import get_pathway
-from src.core.checklist import generate_checklist, checklist_manager
-from src.core.models import DeviceInfo, SaMDInfo, ClassificationResult
 from src.retrieval.retriever import retrieve
 from src.retrieval.vectorstore import vector_store
-from src.agents.regulatory_agent import SimpleRegulatoryAgent
-from src.utils.logging import setup_logging, get_logger
+from src.utils.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
 
 # Global agent instance
-_agent: Optional[SimpleRegulatoryAgent] = None
+_agent: SimpleRegulatoryAgent | None = None
 
 
 @asynccontextmanager
@@ -77,6 +82,7 @@ app = create_app()
 # Request/Response Models
 # =============================================================================
 
+
 class DeviceInfoRequest(BaseModel):
     """Request model for device information."""
 
@@ -88,8 +94,8 @@ class DeviceInfoRequest(BaseModel):
     is_ivd: bool = Field(default=False, description="Is this an IVD?")
     is_implantable: bool = Field(default=False, description="Is this implantable?")
     is_active: bool = Field(default=False, description="Is this an active device?")
-    contact_duration: Optional[str] = Field(default=None)
-    invasive_type: Optional[str] = Field(default=None)
+    contact_duration: str | None = Field(default=None)
+    invasive_type: str | None = Field(default=None)
 
 
 class SaMDInfoRequest(BaseModel):
@@ -99,14 +105,14 @@ class SaMDInfoRequest(BaseModel):
     significance: str = Field(..., description="treat, diagnose, drive, or inform")
     uses_ml: bool = Field(default=False)
     is_locked: bool = Field(default=True)
-    clinical_validation_patients: Optional[int] = Field(default=None)
+    clinical_validation_patients: int | None = Field(default=None)
 
 
 class ClassificationRequest(BaseModel):
     """Request model for device classification."""
 
     device_info: DeviceInfoRequest
-    samd_info: Optional[SaMDInfoRequest] = None
+    samd_info: SaMDInfoRequest | None = None
 
 
 class ClassificationResponse(BaseModel):
@@ -117,10 +123,10 @@ class ClassificationResponse(BaseModel):
     requires_mdl: bool
     review_days: int
     rationale: str
-    classification_rules: List[str]
+    classification_rules: list[str]
     is_samd: bool
-    warnings: List[str]
-    references: List[str]
+    warnings: list[str]
+    references: list[str]
     confidence: float
 
 
@@ -145,7 +151,7 @@ class ChatRequest(BaseModel):
     """Request model for chat."""
 
     message: str = Field(..., description="User message")
-    session_id: Optional[str] = Field(default=None)
+    session_id: str | None = Field(default=None)
 
 
 class ChatResponse(BaseModel):
@@ -159,13 +165,14 @@ class SearchRequest(BaseModel):
     """Request model for document search."""
 
     query: str
-    category: Optional[str] = Field(default=None)
+    category: str | None = Field(default=None)
     top_k: int = Field(default=5, ge=1, le=20)
 
 
 # =============================================================================
 # API Endpoints
 # =============================================================================
+
 
 @app.get("/health")
 async def health_check():
@@ -176,7 +183,9 @@ async def health_check():
 @app.get("/stats")
 async def get_stats():
     """Get vector store statistics."""
-    return vector_store.get_stats()
+    stats = vector_store.get_stats()
+    stats["version"] = "0.1.0"
+    return stats
 
 
 @app.post("/api/v1/classify", response_model=ClassificationResponse)
@@ -240,7 +249,7 @@ async def classify_device_endpoint(request: ClassificationRequest):
 
     except Exception as e:
         logger.error(f"Classification error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/v1/pathway")
@@ -260,7 +269,9 @@ async def get_pathway_endpoint(request: PathwayRequest):
 
         device_class = class_map.get(request.device_class.upper())
         if not device_class:
-            raise HTTPException(status_code=400, detail="Invalid device class")
+            raise HTTPException(
+                status_code=422, detail="Invalid device class. Must be I, II, III, or IV."
+            )
 
         # Create minimal objects for pathway calculation
         classification = ClassificationResult(
@@ -322,7 +333,7 @@ async def get_pathway_endpoint(request: PathwayRequest):
         raise
     except Exception as e:
         logger.error(f"Pathway error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/v1/checklist")
@@ -342,7 +353,9 @@ async def create_checklist_endpoint(request: ChecklistRequest):
 
         device_class = class_map.get(request.device_class.upper())
         if not device_class:
-            raise HTTPException(status_code=400, detail="Invalid device class")
+            raise HTTPException(
+                status_code=422, detail="Invalid device class. Must be I, II, III, or IV."
+            )
 
         classification = ClassificationResult(
             device_class=device_class,
@@ -390,7 +403,7 @@ async def create_checklist_endpoint(request: ChecklistRequest):
         raise
     except Exception as e:
         logger.error(f"Checklist error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/v1/search")
@@ -422,7 +435,7 @@ async def search_documents_endpoint(request: SearchRequest):
 
     except Exception as e:
         logger.error(f"Search error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
@@ -447,7 +460,7 @@ async def chat_endpoint(request: ChatRequest):
         raise
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/api/v1/chat/reset")
@@ -460,4 +473,5 @@ async def reset_chat_endpoint():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host=settings.api_host, port=settings.api_port)

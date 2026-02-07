@@ -13,20 +13,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Set test environment
 os.environ["TESTING"] = "true"
-os.environ.setdefault(
-    "OPENAI_API_KEY",
-    "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"
-)
+os.environ.setdefault("OPENAI_API_KEY", "test-key-placeholder-not-real")
 
 
 # ============================================================================
 # Device Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def samd_device_class_iii():
     """SaMD device that should classify as Class III."""
-    from src.core.models import DeviceInfo, SaMDInfo, HealthcareSituation, SaMDCategory
+    from src.core.models import DeviceInfo, HealthcareSituation, SaMDCategory, SaMDInfo
 
     device = DeviceInfo(
         name="AI Skin Cancer Detector",
@@ -46,7 +44,7 @@ def samd_device_class_iii():
 @pytest.fixture
 def samd_device_class_iv():
     """SaMD device that should classify as Class IV."""
-    from src.core.models import DeviceInfo, SaMDInfo, HealthcareSituation, SaMDCategory
+    from src.core.models import DeviceInfo, HealthcareSituation, SaMDCategory, SaMDInfo
 
     device = DeviceInfo(
         name="AI Cardiac Treatment Advisor",
@@ -66,7 +64,7 @@ def samd_device_class_iv():
 @pytest.fixture
 def samd_device_class_ii():
     """SaMD device that should classify as Class II."""
-    from src.core.models import DeviceInfo, SaMDInfo, HealthcareSituation, SaMDCategory
+    from src.core.models import DeviceInfo, HealthcareSituation, SaMDCategory, SaMDInfo
 
     device = DeviceInfo(
         name="Wellness Tracker",
@@ -119,10 +117,12 @@ def implant_device_class_iii():
 # API Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def api_client():
     """FastAPI test client."""
     from fastapi.testclient import TestClient
+
     from src.api.main import app
 
     return TestClient(app)
@@ -131,6 +131,7 @@ def api_client():
 # ============================================================================
 # Classification Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def classification_engine():
@@ -143,6 +144,7 @@ def classification_engine():
 # ============================================================================
 # Fee Fixtures (2024 Values)
 # ============================================================================
+
 
 @pytest.fixture
 def fees_2024():
@@ -161,6 +163,7 @@ def fees_2024():
 # ============================================================================
 # Pytest Configuration
 # ============================================================================
+
 
 def pytest_configure(config):
     """Register custom markers."""
