@@ -18,6 +18,7 @@ Tests validate:
 Migration: scripts/migrations/2026-02-07_regulatory_twin_core.sql
 """
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -417,6 +418,7 @@ class TestDomainContent:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not shutil.which("psql"), reason="psql not available (CI)")
 class TestLocalPostgresState:
     @pytest.mark.parametrize("table", TWIN_TABLES)
     def test_table_exists(self, table: str):
