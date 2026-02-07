@@ -9,7 +9,7 @@ import sys
 import hashlib
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import Any, Optional
 import re
 
 # Add src to path
@@ -29,7 +29,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 COLLECTION_NAME = "health_canada_regulatory"
 
 
-def load_pdf(file_path: Path) -> Dict[str, Any]:
+def load_pdf(file_path: Path) -> dict[str, Any]:
     """Load a PDF file."""
     print(f"  Loading PDF: {file_path.name}")
     doc = fitz.open(file_path)
@@ -51,7 +51,7 @@ def load_pdf(file_path: Path) -> Dict[str, Any]:
     }
 
 
-def load_docx(file_path: Path) -> Dict[str, Any]:
+def load_docx(file_path: Path) -> dict[str, Any]:
     """Load a DOCX file."""
     print(f"  Loading DOCX: {file_path.name}")
     doc = DocxDocument(file_path)
@@ -75,7 +75,7 @@ def load_docx(file_path: Path) -> Dict[str, Any]:
     }
 
 
-def load_markdown(file_path: Path) -> Dict[str, Any]:
+def load_markdown(file_path: Path) -> dict[str, Any]:
     """Load a Markdown file."""
     print(f"  Loading MD: {file_path.name}")
     content = file_path.read_text(encoding="utf-8")
@@ -114,7 +114,7 @@ def detect_category(file_path: Path, content: str) -> str:
     return "other"
 
 
-def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> str]:
     """Split text into chunks with overlap."""
     # Normalize whitespace
     text = re.sub(r'\s+', ' ', text).strip()
@@ -151,7 +151,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     return chunks
 
 
-def generate_embeddings(texts: List[str], client: OpenAI) -> List[List[float]]:
+def generate_embeddings(texts: str], client: OpenAI) -> float]]:
     """Generate embeddings for texts."""
     if not texts:
         return []
@@ -201,7 +201,7 @@ def main():
     # Delete existing collection if exists, then create new
     try:
         chroma_client.delete_collection(COLLECTION_NAME)
-    except:
+    except Exception:
         pass
 
     collection = chroma_client.create_collection(
