@@ -55,8 +55,8 @@ def main():
                 st.success("✅ API Online")
             else:
                 st.error("❌ API Error")
-        
-            st.error("❌ API Offline")
+                except Exception:
+                    st.error("❌ API Offline")
 
     # Route to appropriate page
     if page == "🔬 Device Classification":
