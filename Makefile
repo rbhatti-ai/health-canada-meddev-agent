@@ -1,3 +1,10 @@
+bootstrap:
+	@echo ">>> Bootstrapping venv + dependencies"
+	@if [ ! -x venv/bin/python ]; then python3 -m venv venv; fi
+	@$(PIP) install --upgrade pip
+	@if [ -f requirements.txt ]; then $(PIP) install -r requirements.txt; fi
+	@$(PIP) install pytest
+
 # =============================================================================
 # Makefile — Health Canada MedDev Agent
 # Dev automation for a regulated-grade platform
@@ -12,7 +19,12 @@
 #   make checkpoint    Full verify + test + snapshot + commit
 # =============================================================================
 
-.PHONY: help test test-unit test-integration test-regulatory test-api \
+# Python interpreter (prefers ./venv if present)
+PY ?= $(shell if [ -x venv/bin/python ]; then echo venv/bin/python; else echo python3; fi)
+PIP ?= $(PY) -m pip
+
+.PHONY: checkpoint clean daily help test test-api test-daily test-integration test-performance test-rag test-regulatory test-unit test-weekly weekly
+
 	test-coverage lint lint-ruff lint-mypy lint-black \
 	db-verify db-migrate snapshot checkpoint clean
 
@@ -45,12 +57,6 @@ test: ## Run full test suite (122+ tests)
 
 test-unit: ## Run unit tests only
 	$(VENV_ACT) $(PYTEST) tests/unit/ -v --tb=short
-
-test-integration: ## Run integration tests
-	$(VENV_ACT) $(PYTEST) tests/integration/ -v --tb=short
-
-test-regulatory: ## Run regulatory accuracy tests
-	$(VENV_ACT) $(PYTEST) tests/regulatory/ -v --tb=short
 
 test-api: ## Run API endpoint tests
 	$(VENV_ACT) $(PYTEST) tests/api/ -v --tb=short
@@ -137,3 +143,35 @@ clean: ## Remove caches and temp files
 	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
 	rm -f *.bak src/**/*.bak tests/**/*.bak
+
+# Friendly aliases (so you only remember "daily" and "weekly")
+# -----------------------------------------------------------------------------
+# Test shortcuts (managed)
+# -----------------------------------------------------------------------------
+
+# Friendly aliases (so you only remember "daily" and "weekly")
+daily: test-daily
+weekly: test-weekly
+
+# Fast sweep (most often)
+test-daily:
+	$(PY) -m pytest tests/unit tests/api -q --durations=10
+
+# Weekly depth (RAG + regulatory + integration)
+test-weekly: test-rag test-regulatory test-integration
+
+test-rag:
+	$(PY) -m pytest tests/rag -q
+
+test-regulatory:
+	$(PY) -m pytest tests/regulatory -q
+
+# Integration often needs services; bring up docker compose if present, and always tear down.
+test-integration:
+	@set -e; \
+	if [ -f docker-compose.yml ]; then docker compose up -d; fi; \
+	trap 'if [ -f docker-compose.yml ]; then docker compose down -v; fi' EXIT; \
+	$(PY) -m pytest tests/integration -q
+
+test-performance:
+	$(PY) -m pytest tests/performance -q

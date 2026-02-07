@@ -121,11 +121,6 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-addopts = "-v --cov=src --cov-report=term-missing"
-
 [tool.black]
 line-length = 100
 target-version = ["py311"]
