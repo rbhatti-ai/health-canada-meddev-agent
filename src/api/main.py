@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from configs.settings import settings
 from src.agents.regulatory_agent import SimpleRegulatoryAgent
+from src.api.traceability_routes import router as traceability_router
 from src.core.checklist import generate_checklist
 from src.core.classification import classify_device
 from src.core.models import (
@@ -76,6 +77,9 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+app.include_router(traceability_router)
 
 
 # =============================================================================
