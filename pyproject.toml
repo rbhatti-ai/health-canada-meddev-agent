@@ -131,5 +131,6 @@ module = [
     "src.retrieval.vectorstore",
     "src.agents.regulatory_agent",
     "src.api.main",
+    "src.utils.logging",
 ]
 ignore_errors = true
