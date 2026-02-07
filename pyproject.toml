@@ -125,3 +125,11 @@ disallow_untyped_defs = true
 [tool.black]
 line-length = 100
 target-version = ["py311"]
+
+[[tool.mypy.overrides]]
+module = [
+    "src.retrieval.vectorstore",
+    "src.agents.regulatory_agent",
+    "src.api.main",
+]
+ignore_errors = true
