@@ -8,19 +8,20 @@ Provides structured tools that the LLM agent can use to:
 - Search regulatory documents
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Any
+
 from langchain_core.tools import tool
 
-from src.core.models import (
-    DeviceInfo,
-    SaMDInfo,
-    SaMDCategory,
-    HealthcareSituation,
-    DeviceClass,
-)
-from src.core.classification import classify_device as _classify_device
-from src.core.pathway import get_pathway as _get_pathway
 from src.core.checklist import generate_checklist as _generate_checklist
+from src.core.classification import classify_device as _classify_device
+from src.core.models import (
+    DeviceClass,
+    DeviceInfo,
+    HealthcareSituation,
+    SaMDCategory,
+    SaMDInfo,
+)
+from src.core.pathway import get_pathway as _get_pathway
 from src.retrieval.retriever import retrieve
 from src.utils.logging import get_logger
 
@@ -37,10 +38,10 @@ def classify_device(
     is_ivd: bool = False,
     is_implantable: bool = False,
     is_active: bool = False,
-    healthcare_situation: Optional[str] = None,
-    significance: Optional[str] = None,
+    healthcare_situation: str | None = None,
+    significance: str | None = None,
     uses_ml: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Classify a medical device according to Health Canada regulations.
 
@@ -90,7 +91,9 @@ def classify_device(
             "inform": SaMDCategory.INFORM,
         }
         samd_info = SaMDInfo(
-            healthcare_situation=situation_map.get(healthcare_situation, HealthcareSituation.SERIOUS),
+            healthcare_situation=situation_map.get(
+                healthcare_situation, HealthcareSituation.SERIOUS
+            ),
             significance=significance_map.get(significance, SaMDCategory.DIAGNOSE),
             uses_ml=uses_ml,
         )
@@ -117,7 +120,7 @@ def get_regulatory_pathway(
     is_software: bool = False,
     has_mdel: bool = False,
     has_qms_certificate: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get the complete regulatory pathway for a device class.
 
@@ -206,7 +209,7 @@ def create_checklist(
     intended_use: str,
     is_software: bool = False,
     include_optional: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate a regulatory checklist for a device.
 
@@ -253,22 +256,24 @@ def create_checklist(
         manufacturer_name="Manufacturer",
     )
 
-    checklist = _generate_checklist(classification, device_info, include_optional)
+    checklist = _generate_checklist(classification, device_info, include_optional=include_optional)
 
     # Organize by category
-    by_category = {}
+    by_category: dict[str, list[dict[str, Any]]] = {}
     for item in checklist.items:
         if item.category not in by_category:
             by_category[item.category] = []
-        by_category[item.category].append({
-            "id": item.id,
-            "title": item.title,
-            "description": item.description,
-            "required": item.required,
-            "status": item.status.value,
-            "guidance_reference": item.guidance_reference,
-            "form_number": item.form_number,
-        })
+        by_category[item.category].append(
+            {
+                "id": item.id,
+                "title": item.title,
+                "description": item.description,
+                "required": item.required,
+                "status": item.status.value,
+                "guidance_reference": item.guidance_reference,
+                "form_number": item.form_number,
+            }
+        )
 
     return {
         "checklist_name": checklist.name,
@@ -282,9 +287,9 @@ def create_checklist(
 @tool
 def search_regulations(
     query: str,
-    category: Optional[str] = None,
+    category: str | None = None,
     top_k: int = 5,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search Health Canada regulatory documents.
 
@@ -320,7 +325,7 @@ def search_regulations(
 
 
 @tool
-def get_fee_information(device_class: str) -> Dict[str, Any]:
+def get_fee_information(device_class: str) -> dict[str, Any]:
     """
     Get current Health Canada fee information for a device class.
 
@@ -379,7 +384,7 @@ def get_fee_information(device_class: str) -> Dict[str, Any]:
     }
 
 
-def get_agent_tools():
+def get_agent_tools() -> list[Any]:
     """Return all available agent tools."""
     return [
         classify_device,

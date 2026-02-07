@@ -6,7 +6,6 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import print as rprint
 
 app = typer.Typer(
     name="meddev-agent",
@@ -23,10 +22,10 @@ def classify(
     intended_use: str = typer.Option(..., "--use", "-u", help="Intended use statement"),
     software: bool = typer.Option(False, "--software", "-s", help="Is this a software device?"),
     manufacturer: str = typer.Option("Unknown", "--manufacturer", "-m", help="Manufacturer name"),
-):
+) -> None:
     """Classify a medical device according to Health Canada regulations."""
-    from src.core.models import DeviceInfo
     from src.core.classification import classify_device
+    from src.core.models import DeviceInfo
 
     device = DeviceInfo(
         name=name,
@@ -39,11 +38,13 @@ def classify(
     result = classify_device(device)
 
     # Display results
-    console.print(Panel(
-        f"[bold green]Device Class: {result.device_class.value}[/bold green]\n"
-        f"[dim]{result.device_class.risk_level}[/dim]",
-        title="Classification Result",
-    ))
+    console.print(
+        Panel(
+            f"[bold green]Device Class: {result.device_class.value}[/bold green]\n"
+            f"[dim]{result.device_class.risk_level}[/dim]",
+            title="Classification Result",
+        )
+    )
 
     console.print(f"\n[bold]Rationale:[/bold]\n{result.rationale}")
 
@@ -64,9 +65,9 @@ def pathway(
     has_mdel: bool = typer.Option(False, "--has-mdel", help="Already have MDEL?"),
     has_qms: bool = typer.Option(False, "--has-qms", help="Already have QMS certificate?"),
     software: bool = typer.Option(False, "--software", "-s", help="Is this a software device?"),
-):
+) -> None:
     """Get the regulatory pathway for a device class."""
-    from src.core.models import DeviceClass, DeviceInfo, ClassificationResult
+    from src.core.models import ClassificationResult, DeviceClass, DeviceInfo
     from src.core.pathway import get_pathway
 
     # Map input to DeviceClass
@@ -99,10 +100,12 @@ def pathway(
     pathway_result = get_pathway(classification, device_info, has_mdel, has_qms)
 
     # Display pathway
-    console.print(Panel(
-        f"[bold]{pathway_result.pathway_name}[/bold]",
-        title="Regulatory Pathway",
-    ))
+    console.print(
+        Panel(
+            f"[bold]{pathway_result.pathway_name}[/bold]",
+            title="Regulatory Pathway",
+        )
+    )
 
     # Steps table
     table = Table(title="Pathway Steps")
@@ -112,14 +115,16 @@ def pathway(
     table.add_column("Fee (CAD)", style="yellow")
 
     for step in pathway_result.steps:
-        duration = f"{step.estimated_duration_days} days" if step.estimated_duration_days else "Variable"
+        duration = (
+            f"{step.estimated_duration_days} days" if step.estimated_duration_days else "Variable"
+        )
         fee = f"${step.fees:,.0f}" if step.fees else "-"
         table.add_row(str(step.step_number), step.name, duration, fee)
 
     console.print(table)
 
     # Timeline
-    console.print(f"\n[bold]Timeline:[/bold]")
+    console.print("\n[bold]Timeline:[/bold]")
     console.print(f"  Minimum: {pathway_result.timeline.total_days_min} days")
     console.print(f"  Maximum: {pathway_result.timeline.total_days_max} days")
 
@@ -131,9 +136,10 @@ def pathway(
 def ingest(
     path: str = typer.Argument(..., help="Path to document or directory to ingest"),
     recursive: bool = typer.Option(True, "--recursive", "-r", help="Process subdirectories"),
-):
+) -> None:
     """Ingest regulatory documents into the knowledge base."""
     from pathlib import Path
+
     from src.ingestion.pipeline import IngestionPipeline
 
     source_path = Path(path)
@@ -146,24 +152,26 @@ def ingest(
     pipeline = IngestionPipeline()
     stats = pipeline.ingest_path(source_path, recursive=recursive)
 
-    console.print(f"\n[green]Ingestion complete![/green]")
-    console.print(f"  Documents processed: {stats['documents_processed']}")
-    console.print(f"  Chunks created: {stats['chunks_created']}")
-    console.print(f"  Errors: {stats['errors']}")
+    console.print("\n[green]Ingestion complete![/green]")
+    console.print(f"  Documents processed: {stats.documents_processed}")
+    console.print(f"  Chunks created: {stats.chunks_created}")
+    console.print(f"  Errors: {stats.errors}")
 
 
 @app.command()
-def chat():
+def chat() -> None:
     """Start an interactive chat session with the regulatory agent."""
     from src.agents.regulatory_agent import RegulatoryAgent
 
-    console.print(Panel(
-        "[bold]Health Canada Medical Device Regulatory Assistant[/bold]\n"
-        "Ask questions about device classification, regulatory pathways,\n"
-        "documentation requirements, and more.\n\n"
-        "[dim]Type 'quit' or 'exit' to end the session.[/dim]",
-        title="Welcome",
-    ))
+    console.print(
+        Panel(
+            "[bold]Health Canada Medical Device Regulatory Assistant[/bold]\n"
+            "Ask questions about device classification, regulatory pathways,\n"
+            "documentation requirements, and more.\n\n"
+            "[dim]Type 'quit' or 'exit' to end the session.[/dim]",
+            title="Welcome",
+        )
+    )
 
     agent = RegulatoryAgent()
 
@@ -191,7 +199,7 @@ def serve(
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
     reload: bool = typer.Option(False, "--reload", help="Enable auto-reload"),
-):
+) -> None:
     """Start the API server."""
     import uvicorn
 
@@ -205,17 +213,23 @@ def serve(
 
 
 @app.command()
-def ui():
+def ui() -> None:
     """Launch the Streamlit web interface."""
     import subprocess
     import sys
 
     console.print("[bold]Launching Streamlit UI...[/bold]")
-    subprocess.run([
-        sys.executable, "-m", "streamlit", "run",
-        "src/ui/app.py",
-        "--server.headless", "true",
-    ])
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "src/ui/app.py",
+            "--server.headless",
+            "true",
+        ]
+    )
 
 
 if __name__ == "__main__":

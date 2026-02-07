@@ -1,14 +1,15 @@
 """Unit tests for device classification engine."""
 
 import pytest
+
+from src.core.classification import ClassificationEngine, classify_device
 from src.core.models import (
     DeviceClass,
     DeviceInfo,
-    SaMDInfo,
-    SaMDCategory,
     HealthcareSituation,
+    SaMDCategory,
+    SaMDInfo,
 )
-from src.core.classification import ClassificationEngine, classify_device
 
 
 @pytest.fixture

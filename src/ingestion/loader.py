@@ -9,10 +9,11 @@ Supports:
 """
 
 import hashlib
+from collections.abc import Generator
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Generator
-from dataclasses import dataclass, field
+from typing import Any
 
 import fitz  # PyMuPDF
 from docx import Document as DocxDocument
@@ -27,7 +28,7 @@ class DocumentChunk:
     """Represents a chunk of text from a document."""
 
     content: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def id(self) -> str:
@@ -42,8 +43,8 @@ class LoadedDocument:
     source_path: str
     file_type: str
     content: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    pages: List[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    pages: list[str] = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -65,10 +66,10 @@ class DocumentLoader:
 
     SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".md", ".txt", ".markdown"}
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = get_logger(self.__class__.__name__)
 
-    def load_file(self, file_path: Path) -> Optional[LoadedDocument]:
+    def load_file(self, file_path: Path) -> LoadedDocument | None:
         """
         Load a single document file.
 
@@ -142,7 +143,7 @@ class DocumentLoader:
         pages = []
         full_text_parts = []
 
-        for page_num, page in enumerate(doc):
+        for _page_num, page in enumerate(doc):
             text = page.get_text("text")
             pages.append(text)
             full_text_parts.append(text)

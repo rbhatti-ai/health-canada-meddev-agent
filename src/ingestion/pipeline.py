@@ -8,17 +8,18 @@ Orchestrates the full ingestion workflow:
 4. Store in vector database
 """
 
-from pathlib import Path
-from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from src.ingestion.loader import DocumentLoader, LoadedDocument
-from src.ingestion.chunker import TextChunker, ChunkingConfig
+from src.ingestion.chunker import ChunkingConfig, TextChunker
 from src.ingestion.embedder import EmbeddingGenerator
+from src.ingestion.loader import DocumentLoader, LoadedDocument
 from src.utils.logging import get_logger
 
-# Note: VectorStoreManager is imported lazily to avoid circular imports
+if TYPE_CHECKING:
+    from src.retrieval.vectorstore import VectorStoreManager
 
 logger = get_logger(__name__)
 
@@ -32,9 +33,9 @@ class IngestionStats:
     chunks_created: int = 0
     embeddings_generated: int = 0
     documents_stored: int = 0
-    errors: List[str] = field(default_factory=list)
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    errors: list[str] = field(default_factory=list)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
 
     @property
     def duration_seconds(self) -> float:
@@ -42,7 +43,7 @@ class IngestionStats:
             return (self.end_time - self.start_time).total_seconds()
         return 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "documents_processed": self.documents_processed,
             "documents_failed": self.documents_failed,
@@ -63,11 +64,11 @@ class IngestionPipeline:
 
     def __init__(
         self,
-        loader: Optional[DocumentLoader] = None,
-        chunker: Optional[TextChunker] = None,
-        embedder: Optional[EmbeddingGenerator] = None,
-        vector_store: Optional["VectorStoreManager"] = None,
-        chunking_config: Optional[ChunkingConfig] = None,
+        loader: DocumentLoader | None = None,
+        chunker: TextChunker | None = None,
+        embedder: EmbeddingGenerator | None = None,
+        vector_store: "VectorStoreManager | None" = None,
+        chunking_config: ChunkingConfig | None = None,
     ):
         # Lazy import to avoid circular dependency
         from src.retrieval.vectorstore import VectorStoreManager
@@ -162,7 +163,7 @@ class IngestionPipeline:
 
     def ingest_documents(
         self,
-        documents: List[LoadedDocument],
+        documents: list[LoadedDocument],
     ) -> IngestionStats:
         """
         Ingest pre-loaded documents.
@@ -246,7 +247,7 @@ class IngestionPipeline:
 
 
 # Lazy singleton pattern to avoid circular import
-_ingestion_pipeline: Optional["IngestionPipeline"] = None
+_ingestion_pipeline: "IngestionPipeline | None" = None
 
 
 def get_ingestion_pipeline() -> "IngestionPipeline":
@@ -257,13 +258,13 @@ def get_ingestion_pipeline() -> "IngestionPipeline":
     return _ingestion_pipeline
 
 
-def ingest_path(path: Path, recursive: bool = True) -> Dict[str, Any]:
+def ingest_path(path: Path, recursive: bool = True) -> dict[str, Any]:
     """Convenience function for path ingestion."""
     stats = get_ingestion_pipeline().ingest_path(path, recursive)
     return stats.to_dict()
 
 
-def ingest_file(file_path: Path) -> Dict[str, Any]:
+def ingest_file(file_path: Path) -> dict[str, Any]:
     """Convenience function for file ingestion."""
     stats = get_ingestion_pipeline().ingest_file(file_path)
     return stats.to_dict()

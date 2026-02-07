@@ -7,8 +7,6 @@ including all components working together.
 
 import pytest
 
-from src.core.models import DeviceClass
-
 
 @pytest.mark.integration
 class TestSaMDClassificationFlow:

@@ -6,8 +6,8 @@ Supports:
 - Pinecone (production)
 """
 
-from typing import List, Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Optional
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -32,8 +32,8 @@ class VectorStoreManager:
 
     def __init__(
         self,
-        persist_directory: Optional[str] = None,
-        collection_name: Optional[str] = None,
+        persist_directory: str | None = None,
+        collection_name: str | None = None,
     ):
         self.persist_directory = persist_directory or settings.chroma_persist_directory
         self.collection_name = collection_name or settings.chroma_collection_name
@@ -64,8 +64,8 @@ class VectorStoreManager:
 
     def add_documents(
         self,
-        chunks: List[DocumentChunk],
-        embeddings: List[List[float]],
+        chunks: list[DocumentChunk],
+        embeddings: list[list[float]],
     ) -> int:
         """
         Add document chunks with embeddings to the store.
@@ -90,7 +90,7 @@ class VectorStoreManager:
         documents = []
         metadatas = []
 
-        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        for i, (chunk, _embedding) in enumerate(zip(chunks, embeddings, strict=True)):
             # Generate unique ID
             doc_id = f"{chunk.metadata.get('file_name', 'doc')}_{chunk.id}_{i}"
             ids.append(doc_id)
@@ -105,10 +105,10 @@ class VectorStoreManager:
         added_count = 0
 
         for i in range(0, len(ids), batch_size):
-            batch_ids = ids[i:i + batch_size]
-            batch_docs = documents[i:i + batch_size]
-            batch_embeddings = embeddings[i:i + batch_size]
-            batch_metadatas = metadatas[i:i + batch_size]
+            batch_ids = ids[i : i + batch_size]
+            batch_docs = documents[i : i + batch_size]
+            batch_embeddings = embeddings[i : i + batch_size]
+            batch_metadatas = metadatas[i : i + batch_size]
 
             try:
                 self.collection.add(
@@ -126,10 +126,10 @@ class VectorStoreManager:
 
     def search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         n_results: int = 5,
-        filter_metadata: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+        filter_metadata: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Search for similar documents.
 
@@ -210,15 +210,15 @@ class VectorStoreManager:
             metadata={"hnsw:space": "cosine"},
         )
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get statistics about the vector store."""
         count = self.collection.count()
 
         # Get unique sources
         try:
             all_metadata = self.collection.get(include=["metadatas"])
-            sources = set()
-            categories = {}
+            sources: set[str] = set()
+            categories: dict[str, int] = {}
 
             for meta in all_metadata.get("metadatas", []):
                 if meta:
@@ -238,11 +238,11 @@ class VectorStoreManager:
             "persist_directory": self.persist_directory,
         }
 
-    def _flatten_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def _flatten_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
         """Flatten nested metadata for ChromaDB compatibility."""
         flat = {}
         for key, value in metadata.items():
-            if isinstance(value, (str, int, float, bool)):
+            if isinstance(value, str | int | float | bool):
                 flat[key] = value
             elif isinstance(value, list):
                 flat[key] = str(value)  # Convert lists to strings
@@ -268,7 +268,8 @@ def get_vector_store() -> "VectorStoreManager":
 # For backwards compatibility - lazy property
 class _VectorStoreProxy:
     """Proxy that lazily initializes the vector store."""
-    def __getattr__(self, name):
+
+    def __getattr__(self, name: str) -> Any:
         return getattr(get_vector_store(), name)
 
 

@@ -6,32 +6,30 @@ fee calculations, and step-by-step guidance for Health Canada submissions.
 """
 
 from datetime import date, timedelta
-from typing import List, Optional
 
 from src.core.models import (
+    ClassificationResult,
     DeviceClass,
     DeviceInfo,
-    ClassificationResult,
-    RegulatoryPathway,
-    PathwayStep,
-    Timeline,
     FeeBreakdown,
+    PathwayStep,
+    RegulatoryPathway,
+    Timeline,
 )
-
 
 # Health Canada Fee Schedule (as of April 2024)
 # Reference: https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices/fees
 FEES_2024 = {
     "mdel_application": 4590,  # MDEL new application
-    "mdel_amendment": 384,     # MDEL amendment
-    "mdl_class_ii": 468,       # MDL Class II
-    "mdl_class_iii": 7658,     # MDL Class III
-    "mdl_class_iv": 23130,     # MDL Class IV
+    "mdel_amendment": 384,  # MDEL amendment
+    "mdl_class_ii": 468,  # MDL Class II
+    "mdl_class_iii": 7658,  # MDL Class III
+    "mdl_class_iv": 23130,  # MDL Class IV
     "mdl_amendment_admin": 384,  # Administrative amendment
     "mdl_amendment_significant": 7658,  # Significant change
     "annual_right_to_sell_ii": 0,  # No annual fee Class II
     "annual_right_to_sell_iii": 831,  # Annual fee Class III
-    "annual_right_to_sell_iv": 1662,   # Annual fee Class IV
+    "annual_right_to_sell_iv": 1662,  # Annual fee Class IV
 }
 
 # Review timelines in calendar days
@@ -220,9 +218,9 @@ class PathwayAdvisor:
                     fees=mdl_fee,
                 )
             )
-            timeline = REVIEW_TIMELINES[device_class]
-            total_days_min += timeline["min"]
-            total_days_max += timeline["max"]
+            review_times = REVIEW_TIMELINES[device_class]
+            total_days_min += review_times["min"]
+            total_days_max += review_times["max"]
             step_num += 1
 
         # Calculate fees
@@ -312,7 +310,7 @@ class PathwayAdvisor:
 
     def _generate_milestones(
         self,
-        steps: List[PathwayStep],
+        steps: list[PathwayStep],
         start_date: date,
     ) -> dict:
         """Generate milestone dates based on steps."""
@@ -334,7 +332,7 @@ class PathwayAdvisor:
         device_class: DeviceClass,
         device_info: DeviceInfo,
         classification: ClassificationResult,
-    ) -> List[str]:
+    ) -> list[str]:
         """Determine special requirements based on device characteristics."""
         requirements = []
 
@@ -349,19 +347,13 @@ class PathwayAdvisor:
             )
 
         if device_info.is_ivd:
-            requirements.append(
-                "IVD-specific requirements apply (analytical/clinical performance)"
-            )
+            requirements.append("IVD-specific requirements apply (analytical/clinical performance)")
 
         if device_info.is_implantable:
-            requirements.append(
-                "Biocompatibility testing per ISO 10993 required"
-            )
+            requirements.append("Biocompatibility testing per ISO 10993 required")
 
         if device_class == DeviceClass.CLASS_IV:
-            requirements.append(
-                "Pre-submission meeting with Health Canada recommended"
-            )
+            requirements.append("Pre-submission meeting with Health Canada recommended")
 
         return requirements
 
@@ -377,6 +369,4 @@ def get_pathway(
     has_qms_certificate: bool = False,
 ) -> RegulatoryPathway:
     """Convenience function to get regulatory pathway."""
-    return pathway_advisor.get_pathway(
-        classification, device_info, has_mdel, has_qms_certificate
-    )
+    return pathway_advisor.get_pathway(classification, device_info, has_mdel, has_qms_certificate)

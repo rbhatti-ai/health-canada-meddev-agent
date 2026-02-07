@@ -7,8 +7,8 @@ Implements various reranking strategies:
 - Diversity reranking
 """
 
-from typing import List, Optional
 from dataclasses import dataclass
+from typing import Any
 
 from src.retrieval.retriever import RetrievalResult
 from src.utils.logging import get_logger
@@ -59,9 +59,9 @@ class Reranker:
     def rerank(
         self,
         query: str,
-        results: List[RetrievalResult],
-        top_k: Optional[int] = None,
-    ) -> List[RerankedResult]:
+        results: list[RetrievalResult],
+        top_k: int | None = None,
+    ) -> list[RerankedResult]:
         """
         Rerank retrieval results.
 
@@ -110,8 +110,8 @@ class Reranker:
 
     def _apply_category_boost(
         self,
-        results: List[RerankedResult],
-    ) -> List[RerankedResult]:
+        results: list[RerankedResult],
+    ) -> list[RerankedResult]:
         """Apply category-based score boosting."""
         for result in results:
             category = result.metadata.get("category", "other")
@@ -122,8 +122,8 @@ class Reranker:
 
     def _apply_diversity_rerank(
         self,
-        results: List[RerankedResult],
-    ) -> List[RerankedResult]:
+        results: list[RerankedResult],
+    ) -> list[RerankedResult]:
         """
         Promote diversity by penalizing similar results.
 
@@ -148,7 +148,7 @@ class Reranker:
 
             # Penalize if too similar to existing selections
             if max_similarity > self.diversity_threshold:
-                candidate.rerank_score *= (1.0 - max_similarity * 0.5)
+                candidate.rerank_score *= 1.0 - max_similarity * 0.5
 
             selected.append(candidate)
 
@@ -178,8 +178,8 @@ reranker = Reranker()
 
 def rerank(
     query: str,
-    results: List[RetrievalResult],
-    **kwargs,
-) -> List[RerankedResult]:
+    results: list[RetrievalResult],
+    **kwargs: Any,
+) -> list[RerankedResult]:
     """Convenience function for reranking."""
     return reranker.rerank(query, results, **kwargs)

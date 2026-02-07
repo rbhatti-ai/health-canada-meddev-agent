@@ -8,14 +8,13 @@ These models represent the key concepts in medical device regulation:
 - Compliance tracking
 """
 
-from datetime import date, timedelta
-from enum import Enum
-from typing import List, Optional, Dict, Any
+from datetime import date
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class DeviceClass(str, Enum):
+class DeviceClass(StrEnum):
     """Health Canada medical device classification levels."""
 
     CLASS_I = "I"
@@ -51,7 +50,7 @@ class DeviceClass(str, Enum):
         return self.value != "I"
 
 
-class SaMDCategory(str, Enum):
+class SaMDCategory(StrEnum):
     """IMDRF SaMD significance categories."""
 
     INFORM = "inform"  # Inform clinical management
@@ -60,7 +59,7 @@ class SaMDCategory(str, Enum):
     TREAT = "treat"  # Treat or prevent
 
 
-class HealthcareSituation(str, Enum):
+class HealthcareSituation(StrEnum):
     """IMDRF healthcare situation/state categories."""
 
     NON_SERIOUS = "non_serious"
@@ -78,15 +77,13 @@ class DeviceInfo(BaseModel):
     is_ivd: bool = Field(default=False, description="Is this an in-vitro diagnostic device?")
     is_implantable: bool = Field(default=False, description="Is this an implantable device?")
     is_active: bool = Field(default=False, description="Is this an active (powered) device?")
-    contact_duration: Optional[str] = Field(
+    contact_duration: str | None = Field(
         default=None, description="Duration of body contact (transient/short-term/long-term)"
     )
-    invasive_type: Optional[str] = Field(
+    invasive_type: str | None = Field(
         default=None, description="Type of invasive use (surgical/body orifice/none)"
     )
-    target_population: Optional[str] = Field(
-        default=None, description="Target patient population"
-    )
+    target_population: str | None = Field(default=None, description="Target patient population")
     manufacturer_name: str = Field(..., description="Legal manufacturer name")
     manufacturer_country: str = Field(default="Canada", description="Country of manufacturer")
 
@@ -101,10 +98,8 @@ class SaMDInfo(BaseModel):
         ..., description="Significance of information provided by SaMD"
     )
     uses_ml: bool = Field(default=False, description="Does the SaMD use machine learning/AI?")
-    is_locked: bool = Field(
-        default=True, description="Is the algorithm locked (non-adaptive)?"
-    )
-    clinical_validation_patients: Optional[int] = Field(
+    is_locked: bool = Field(default=True, description="Is the algorithm locked (non-adaptive)?")
+    clinical_validation_patients: int | None = Field(
         default=None, description="Number of patients in clinical validation"
     )
 
@@ -113,23 +108,18 @@ class ClassificationResult(BaseModel):
     """Result of device classification analysis."""
 
     device_class: DeviceClass = Field(..., description="Determined device class")
-    classification_rules: List[str] = Field(
-        default_factory=list, description="Classification rules applied (e.g., 'Schedule 1, Rule 11')"
+    classification_rules: list[str] = Field(
+        default_factory=list,
+        description="Classification rules applied (e.g., 'Schedule 1, Rule 11')",
     )
     rationale: str = Field(..., description="Explanation of classification decision")
     is_samd: bool = Field(default=False, description="Whether device is classified as SaMD")
-    samd_category: Optional[str] = Field(
-        default=None, description="SaMD category if applicable"
-    )
+    samd_category: str | None = Field(default=None, description="SaMD category if applicable")
     confidence: float = Field(
         default=1.0, ge=0.0, le=1.0, description="Confidence in classification (0-1)"
     )
-    warnings: List[str] = Field(
-        default_factory=list, description="Any warnings or considerations"
-    )
-    references: List[str] = Field(
-        default_factory=list, description="Regulatory references cited"
-    )
+    warnings: list[str] = Field(default_factory=list, description="Any warnings or considerations")
+    references: list[str] = Field(default_factory=list, description="Regulatory references cited")
 
 
 class PathwayStep(BaseModel):
@@ -139,19 +129,17 @@ class PathwayStep(BaseModel):
     name: str = Field(..., description="Step name")
     description: str = Field(..., description="What this step involves")
     required: bool = Field(default=True, description="Whether this step is mandatory")
-    estimated_duration_days: Optional[int] = Field(
+    estimated_duration_days: int | None = Field(
         default=None, description="Estimated duration in days"
     )
-    dependencies: List[int] = Field(
+    dependencies: list[int] = Field(
         default_factory=list, description="Step numbers that must be completed first"
     )
-    documents_required: List[str] = Field(
+    documents_required: list[str] = Field(
         default_factory=list, description="Documents needed for this step"
     )
-    forms: List[str] = Field(
-        default_factory=list, description="Health Canada forms for this step"
-    )
-    fees: Optional[float] = Field(default=None, description="Fees for this step in CAD")
+    forms: list[str] = Field(default_factory=list, description="Health Canada forms for this step")
+    fees: float | None = Field(default=None, description="Fees for this step in CAD")
 
 
 class Timeline(BaseModel):
@@ -159,16 +147,10 @@ class Timeline(BaseModel):
 
     total_days_min: int = Field(..., description="Minimum estimated days")
     total_days_max: int = Field(..., description="Maximum estimated days")
-    critical_path: List[str] = Field(
-        default_factory=list, description="Critical path steps"
-    )
-    start_date: Optional[date] = Field(default=None, description="Projected start date")
-    target_completion: Optional[date] = Field(
-        default=None, description="Target completion date"
-    )
-    milestones: Dict[str, date] = Field(
-        default_factory=dict, description="Key milestone dates"
-    )
+    critical_path: list[str] = Field(default_factory=list, description="Critical path steps")
+    start_date: date | None = Field(default=None, description="Projected start date")
+    target_completion: date | None = Field(default=None, description="Target completion date")
+    milestones: dict[str, date] = Field(default_factory=dict, description="Key milestone dates")
 
 
 class FeeBreakdown(BaseModel):
@@ -180,12 +162,8 @@ class FeeBreakdown(BaseModel):
     amendment_fees: float = Field(default=0.0, description="Any amendment fees")
     total: float = Field(default=0.0, description="Total fees")
     currency: str = Field(default="CAD", description="Currency")
-    fee_schedule_date: str = Field(
-        default="2024-04-01", description="Fee schedule effective date"
-    )
-    notes: List[str] = Field(
-        default_factory=list, description="Notes about fee calculations"
-    )
+    fee_schedule_date: str = Field(default="2024-04-01", description="Fee schedule effective date")
+    notes: list[str] = Field(default_factory=list, description="Notes about fee calculations")
 
 
 class RegulatoryPathway(BaseModel):
@@ -195,15 +173,15 @@ class RegulatoryPathway(BaseModel):
     device_class: DeviceClass = Field(..., description="Device class")
     requires_mdel: bool = Field(default=True, description="Whether MDEL is required")
     requires_mdl: bool = Field(..., description="Whether MDL is required")
-    steps: List[PathwayStep] = Field(default_factory=list, description="Pathway steps")
+    steps: list[PathwayStep] = Field(default_factory=list, description="Pathway steps")
     timeline: Timeline = Field(..., description="Estimated timeline")
     fees: FeeBreakdown = Field(..., description="Fee breakdown")
-    special_requirements: List[str] = Field(
+    special_requirements: list[str] = Field(
         default_factory=list, description="Special requirements for this pathway"
     )
 
 
-class ComplianceStatus(str, Enum):
+class ComplianceStatus(StrEnum):
     """Status of a compliance requirement."""
 
     NOT_STARTED = "not_started"
@@ -224,19 +202,19 @@ class ChecklistItem(BaseModel):
         default=ComplianceStatus.NOT_STARTED, description="Current status"
     )
     required: bool = Field(default=True, description="Whether item is required")
-    device_classes: List[DeviceClass] = Field(
+    device_classes: list[DeviceClass] = Field(
         default_factory=list, description="Applicable device classes"
     )
-    dependencies: List[str] = Field(
+    dependencies: list[str] = Field(
         default_factory=list, description="IDs of items that must be completed first"
     )
-    guidance_reference: Optional[str] = Field(
+    guidance_reference: str | None = Field(
         default=None, description="Reference to guidance document"
     )
-    form_number: Optional[str] = Field(
+    form_number: str | None = Field(
         default=None, description="Associated Health Canada form number"
     )
-    notes: Optional[str] = Field(default=None, description="Additional notes")
+    notes: str | None = Field(default=None, description="Additional notes")
 
 
 class Checklist(BaseModel):
@@ -244,7 +222,7 @@ class Checklist(BaseModel):
 
     name: str = Field(..., description="Checklist name")
     device_class: DeviceClass = Field(..., description="Target device class")
-    items: List[ChecklistItem] = Field(default_factory=list, description="Checklist items")
+    items: list[ChecklistItem] = Field(default_factory=list, description="Checklist items")
     created_date: date = Field(default_factory=date.today)
     last_updated: date = Field(default_factory=date.today)
 
@@ -270,19 +248,11 @@ class DocumentRequirement(BaseModel):
     """A required document for regulatory submission."""
 
     name: str = Field(..., description="Document name")
-    imdrf_section: Optional[str] = Field(
-        default=None, description="IMDRF Table of Contents section"
-    )
+    imdrf_section: str | None = Field(default=None, description="IMDRF Table of Contents section")
     description: str = Field(..., description="What the document should contain")
-    required_for_classes: List[DeviceClass] = Field(
+    required_for_classes: list[DeviceClass] = Field(
         default_factory=list, description="Device classes requiring this document"
     )
-    template_available: bool = Field(
-        default=False, description="Whether a template is available"
-    )
-    guidance_reference: Optional[str] = Field(
-        default=None, description="Guidance document reference"
-    )
-    examples: List[str] = Field(
-        default_factory=list, description="Example content or formats"
-    )
+    template_available: bool = Field(default=False, description="Whether a template is available")
+    guidance_reference: str | None = Field(default=None, description="Guidance document reference")
+    examples: list[str] = Field(default_factory=list, description="Example content or formats")

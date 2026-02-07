@@ -9,8 +9,9 @@ Provides an interactive web interface for:
 - Chat interface
 """
 
+from typing import Any
+
 import streamlit as st
-from typing import Optional
 
 # Page configuration
 st.set_page_config(
@@ -31,7 +32,7 @@ if "checklist" not in st.session_state:
     st.session_state.checklist = None
 
 
-def main():
+def main() -> None:
     """Main application entry point."""
     st.title("🏥 Health Canada Medical Device Regulatory Agent")
     st.markdown("*AI-powered assistant for navigating Canadian medical device regulations*")
@@ -52,9 +53,13 @@ def main():
 
         st.divider()
         st.markdown("### Quick Links")
-        st.markdown("- [Health Canada Medical Devices](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices.html)")
+        st.markdown(
+            "- [Health Canada Medical Devices](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices.html)"
+        )
         st.markdown("- [MDALL Database](https://health-products.canada.ca/mdall-limh/)")
-        st.markdown("- [Fee Schedule](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices/fees.html)")
+        st.markdown(
+            "- [Fee Schedule](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices/fees.html)"
+        )
 
     # Route to appropriate page
     if page == "💬 Chat Assistant":
@@ -69,18 +74,20 @@ def main():
         render_search_page()
 
 
-def render_chat_page():
+def render_chat_page() -> None:
     """Render the chat interface."""
     st.header("💬 Chat with Regulatory Assistant")
 
-    st.markdown("""
+    st.markdown(
+        """
     Ask me anything about Health Canada medical device regulations:
     - Device classification questions
     - Regulatory pathway guidance
     - Documentation requirements
     - Fee information
     - Specific regulation queries
-    """)
+    """
+    )
 
     # Display chat history
     for message in st.session_state.messages:
@@ -117,14 +124,16 @@ def render_chat_page():
         st.rerun()
 
 
-def render_classification_page():
+def render_classification_page() -> None:
     """Render the device classification interface."""
     st.header("🔬 Device Classification")
 
-    st.markdown("""
+    st.markdown(
+        """
     Enter your device information to determine its Health Canada classification.
     The classification determines regulatory requirements, review timelines, and fees.
-    """)
+    """
+    )
 
     col1, col2 = st.columns(2)
 
@@ -170,8 +179,13 @@ def render_classification_page():
         else:
             with st.spinner("Classifying device..."):
                 try:
-                    from src.core.models import DeviceInfo, SaMDInfo, HealthcareSituation, SaMDCategory
                     from src.core.classification import classify_device
+                    from src.core.models import (
+                        DeviceInfo,
+                        HealthcareSituation,
+                        SaMDCategory,
+                        SaMDInfo,
+                    )
 
                     device_info = DeviceInfo(
                         name=device_name,
@@ -231,13 +245,15 @@ def render_classification_page():
                     st.error(f"Classification failed: {str(e)}")
 
 
-def render_pathway_page():
+def render_pathway_page() -> None:
     """Render the regulatory pathway interface."""
     st.header("🗺️ Regulatory Pathway")
 
-    st.markdown("""
+    st.markdown(
+        """
     Generate a complete regulatory pathway with steps, timeline, and fees.
-    """)
+    """
+    )
 
     col1, col2 = st.columns(2)
 
@@ -256,7 +272,11 @@ def render_pathway_page():
     if st.button("Generate Pathway", type="primary"):
         with st.spinner("Generating pathway..."):
             try:
-                from src.core.models import DeviceClass, DeviceInfo, ClassificationResult
+                from src.core.models import (
+                    ClassificationResult,
+                    DeviceClass,
+                    DeviceInfo,
+                )
                 from src.core.pathway import get_pathway
 
                 class_map = {
@@ -287,7 +307,10 @@ def render_pathway_page():
                 with col1:
                     st.metric("Total Steps", len(pathway.steps))
                 with col2:
-                    st.metric("Timeline", f"{pathway.timeline.total_days_min}-{pathway.timeline.total_days_max} days")
+                    st.metric(
+                        "Timeline",
+                        f"{pathway.timeline.total_days_min}-{pathway.timeline.total_days_max} days",
+                    )
                 with col3:
                     st.metric("Total Fees", f"${pathway.fees.total:,.0f} CAD")
 
@@ -324,13 +347,15 @@ def render_pathway_page():
                 st.error(f"Failed to generate pathway: {str(e)}")
 
 
-def render_checklist_page():
+def render_checklist_page() -> None:
     """Render the checklist generator interface."""
     st.header("✅ Regulatory Checklist")
 
-    st.markdown("""
+    st.markdown(
+        """
     Generate a comprehensive checklist for your regulatory submission.
-    """)
+    """
+    )
 
     col1, col2 = st.columns(2)
 
@@ -354,8 +379,12 @@ def render_checklist_page():
         else:
             with st.spinner("Generating checklist..."):
                 try:
-                    from src.core.models import DeviceClass, DeviceInfo, ClassificationResult
                     from src.core.checklist import generate_checklist
+                    from src.core.models import (
+                        ClassificationResult,
+                        DeviceClass,
+                        DeviceInfo,
+                    )
 
                     class_map = {
                         "I": DeviceClass.CLASS_I,
@@ -385,7 +414,7 @@ def render_checklist_page():
                     st.success(f"Generated checklist with {checklist.total_items} items")
 
                     # Group by category
-                    categories = {}
+                    categories: dict[str, list[Any]] = {}
                     for item in checklist.items:
                         if item.category not in categories:
                             categories[item.category] = []
@@ -404,6 +433,7 @@ def render_checklist_page():
 
                     # Export button
                     from src.core.checklist import checklist_manager
+
                     md_export = checklist_manager.export_checklist(checklist, "markdown")
                     st.download_button(
                         "📥 Download Checklist (Markdown)",
@@ -416,13 +446,15 @@ def render_checklist_page():
                     st.error(f"Failed to generate checklist: {str(e)}")
 
 
-def render_search_page():
+def render_search_page() -> None:
     """Render the document search interface."""
     st.header("🔍 Document Search")
 
-    st.markdown("""
+    st.markdown(
+        """
     Search Health Canada regulatory documents and guidance.
-    """)
+    """
+    )
 
     query = st.text_input("Search Query", placeholder="e.g., SaMD classification requirements")
 
@@ -451,7 +483,9 @@ def render_search_page():
                     )
 
                     if not results:
-                        st.warning("No results found. Try a different query or ingest documents first.")
+                        st.warning(
+                            "No results found. Try a different query or ingest documents first."
+                        )
                     else:
                         st.success(f"Found {len(results)} results")
 

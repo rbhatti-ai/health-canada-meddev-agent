@@ -10,8 +10,8 @@ Possible Framework for Risk Categorization and Corresponding Considerations
 
 import pytest
 
-from src.core.models import DeviceClass, HealthcareSituation, SaMDCategory
 from src.core.classification import SAMD_CLASSIFICATION_MATRIX
+from src.core.models import DeviceClass, HealthcareSituation, SaMDCategory
 
 
 @pytest.mark.regulatory
@@ -101,13 +101,13 @@ class TestMatrixCompleteness:
 
     def test_all_healthcare_situations_covered(self):
         """All healthcare situations should be represented."""
-        situations_in_matrix = set(key[0] for key in SAMD_CLASSIFICATION_MATRIX.keys())
+        situations_in_matrix = {key[0] for key in SAMD_CLASSIFICATION_MATRIX}
         all_situations = set(HealthcareSituation)
         assert situations_in_matrix == all_situations
 
     def test_all_samd_categories_covered(self):
         """All SaMD categories should be represented."""
-        categories_in_matrix = set(key[1] for key in SAMD_CLASSIFICATION_MATRIX.keys())
+        categories_in_matrix = {key[1] for key in SAMD_CLASSIFICATION_MATRIX}
         all_categories = set(SaMDCategory)
         assert categories_in_matrix == all_categories
 
@@ -139,7 +139,8 @@ class TestMatrixLogic:
 
     def test_class_i_only_lowest_risk(self):
         """Class I should only occur for Non-Serious + Inform."""
-        class_i_keys = [k for k, v in SAMD_CLASSIFICATION_MATRIX.items()
-                        if v == DeviceClass.CLASS_I]
+        class_i_keys = [
+            k for k, v in SAMD_CLASSIFICATION_MATRIX.items() if v == DeviceClass.CLASS_I
+        ]
         assert len(class_i_keys) == 1
         assert class_i_keys[0] == (HealthcareSituation.NON_SERIOUS, SaMDCategory.INFORM)

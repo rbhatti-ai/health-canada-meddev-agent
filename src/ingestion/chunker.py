@@ -6,10 +6,10 @@ and handles regulatory document structure.
 """
 
 import re
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any
 
-from src.ingestion.loader import LoadedDocument, DocumentChunk
+from src.ingestion.loader import DocumentChunk, LoadedDocument
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -49,15 +49,12 @@ class TextChunker:
         r"^Rule\s+\d+",  # Rule 1, 2, etc.
     ]
 
-    def __init__(self, config: Optional[ChunkingConfig] = None):
+    def __init__(self, config: ChunkingConfig | None = None):
         self.config = config or ChunkingConfig()
         self.logger = get_logger(self.__class__.__name__)
-        self._section_regex = re.compile(
-            "|".join(self.SECTION_PATTERNS),
-            re.MULTILINE
-        )
+        self._section_regex = re.compile("|".join(self.SECTION_PATTERNS), re.MULTILINE)
 
-    def chunk_document(self, document: LoadedDocument) -> List[DocumentChunk]:
+    def chunk_document(self, document: LoadedDocument) -> list[DocumentChunk]:
         """
         Split a document into semantic chunks.
 
@@ -77,7 +74,7 @@ class TextChunker:
         self.logger.info(f"Created {len(chunks)} chunks")
         return chunks
 
-    def _chunk_by_sections(self, document: LoadedDocument) -> List[DocumentChunk]:
+    def _chunk_by_sections(self, document: LoadedDocument) -> list[DocumentChunk]:
         """
         Chunk document respecting section boundaries.
 
@@ -104,10 +101,12 @@ class TextChunker:
                         "section_index": section_idx,
                         "chunk_index": 0,
                     }
-                    chunks.append(DocumentChunk(
-                        content=section_text,
-                        metadata=chunk_metadata,
-                    ))
+                    chunks.append(
+                        DocumentChunk(
+                            content=section_text,
+                            metadata=chunk_metadata,
+                        )
+                    )
             else:
                 # Split large sections
                 sub_chunks = self._chunk_by_size(
@@ -116,13 +115,13 @@ class TextChunker:
                         **metadata,
                         "section_title": section_title,
                         "section_index": section_idx,
-                    }
+                    },
                 )
                 chunks.extend(sub_chunks)
 
         return chunks
 
-    def _split_into_sections(self, content: str) -> List[Dict[str, Any]]:
+    def _split_into_sections(self, content: str) -> list[dict[str, Any]]:
         """Split content into sections based on headings."""
         sections = []
         current_section = {"title": "", "text": ""}
@@ -152,8 +151,8 @@ class TextChunker:
     def _chunk_by_size(
         self,
         text: str,
-        base_metadata: Dict[str, Any],
-    ) -> List[DocumentChunk]:
+        base_metadata: dict[str, Any],
+    ) -> list[DocumentChunk]:
         """
         Chunk text based on size with overlap.
 
@@ -166,10 +165,12 @@ class TextChunker:
 
         if len(text) <= self.config.chunk_size:
             if len(text) >= self.config.min_chunk_size:
-                chunks.append(DocumentChunk(
-                    content=text,
-                    metadata={**base_metadata, "chunk_index": 0},
-                ))
+                chunks.append(
+                    DocumentChunk(
+                        content=text,
+                        metadata={**base_metadata, "chunk_index": 0},
+                    )
+                )
             return chunks
 
         # Split into sentences for cleaner chunking
@@ -183,10 +184,12 @@ class TextChunker:
             if len(current_chunk) + len(sentence) > self.config.chunk_size:
                 # Save current chunk if it meets minimum size
                 if len(current_chunk) >= self.config.min_chunk_size:
-                    chunks.append(DocumentChunk(
-                        content=current_chunk.strip(),
-                        metadata={**base_metadata, "chunk_index": chunk_index},
-                    ))
+                    chunks.append(
+                        DocumentChunk(
+                            content=current_chunk.strip(),
+                            metadata={**base_metadata, "chunk_index": chunk_index},
+                        )
+                    )
                     chunk_index += 1
 
                     # Start new chunk with overlap
@@ -199,14 +202,16 @@ class TextChunker:
 
         # Don't forget the last chunk
         if current_chunk.strip() and len(current_chunk) >= self.config.min_chunk_size:
-            chunks.append(DocumentChunk(
-                content=current_chunk.strip(),
-                metadata={**base_metadata, "chunk_index": chunk_index},
-            ))
+            chunks.append(
+                DocumentChunk(
+                    content=current_chunk.strip(),
+                    metadata={**base_metadata, "chunk_index": chunk_index},
+                )
+            )
 
         return chunks
 
-    def _split_into_sentences(self, text: str) -> List[str]:
+    def _split_into_sentences(self, text: str) -> list[str]:
         """Split text into sentences."""
         # Simple sentence splitting - handles common cases
         # For production, consider using spaCy or NLTK
@@ -228,12 +233,12 @@ class TextChunker:
             return text
 
         # Try to break at a sentence boundary within overlap region
-        overlap_region = text[-self.config.chunk_overlap:]
+        overlap_region = text[-self.config.chunk_overlap :]
 
         # Find last sentence boundary in overlap region
         match = re.search(r"[.!?]\s+", overlap_region)
         if match:
-            return overlap_region[match.end():]
+            return overlap_region[match.end() :]
 
         # Fall back to word boundary
         words = overlap_region.split()
@@ -260,6 +265,6 @@ class TextChunker:
 text_chunker = TextChunker()
 
 
-def chunk_document(document: LoadedDocument) -> List[DocumentChunk]:
+def chunk_document(document: LoadedDocument) -> list[DocumentChunk]:
     """Convenience function for document chunking."""
     return text_chunker.chunk_document(document)

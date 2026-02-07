@@ -80,8 +80,8 @@ class TestSupabaseClient:
     def test_get_supabase_client_raises_when_not_configured(self):
         """Verify get_supabase_client raises when config missing."""
         from src.persistence.supabase_client import (
-            get_supabase_client,
             SupabaseNotConfiguredError,
+            get_supabase_client,
         )
 
         # Clear the cache to ensure fresh call
@@ -99,8 +99,8 @@ class TestSupabaseClient:
     def test_get_supabase_admin_client_raises_when_service_key_missing(self):
         """Verify get_supabase_admin_client raises when service role key missing."""
         from src.persistence.supabase_client import (
-            get_supabase_admin_client,
             SupabaseNotConfiguredError,
+            get_supabase_admin_client,
         )
 
         # Clear the cache to ensure fresh call

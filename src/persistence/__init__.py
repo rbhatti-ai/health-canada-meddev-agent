@@ -1,9 +1,9 @@
 """Persistence layer for Supabase database integration."""
 
 from src.persistence.supabase_client import (
-    get_supabase_client,
-    get_supabase_admin_client,
     SupabaseNotConfiguredError,
+    get_supabase_admin_client,
+    get_supabase_client,
 )
 
 __all__ = [

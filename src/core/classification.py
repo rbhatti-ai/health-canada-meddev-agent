@@ -7,17 +7,14 @@ Implements Health Canada medical device classification rules based on:
 - Health Canada SaMD guidance documents
 """
 
-from typing import Optional, Tuple
-
 from src.core.models import (
+    ClassificationResult,
     DeviceClass,
     DeviceInfo,
-    SaMDInfo,
-    SaMDCategory,
     HealthcareSituation,
-    ClassificationResult,
+    SaMDCategory,
+    SaMDInfo,
 )
-
 
 # IMDRF SaMD Classification Matrix
 # Rows: Healthcare Situation (Critical, Serious, Non-serious)
@@ -51,7 +48,7 @@ class ClassificationEngine:
     def classify_device(
         self,
         device_info: DeviceInfo,
-        samd_info: Optional[SaMDInfo] = None,
+        samd_info: SaMDInfo | None = None,
     ) -> ClassificationResult:
         """
         Classify a medical device according to Health Canada regulations.
@@ -72,7 +69,9 @@ class ClassificationEngine:
                     rationale="Device is software-based. Additional SaMD information needed for precise classification.",
                     is_samd=True,
                     confidence=0.5,
-                    warnings=["Please provide SaMD-specific information for accurate classification"],
+                    warnings=[
+                        "Please provide SaMD-specific information for accurate classification"
+                    ],
                 )
             return self._classify_samd(device_info, samd_info)
 
@@ -92,7 +91,7 @@ class ClassificationEngine:
 
         # Build rationale
         rationale_parts = [
-            f"SaMD Classification based on IMDRF N12 framework:",
+            "SaMD Classification based on IMDRF N12 framework:",
             f"- Healthcare situation: {samd_info.healthcare_situation.value}",
             f"- Significance of information: {samd_info.significance.value}",
             f"- Matrix result: Class {device_class.value}",
@@ -151,10 +150,10 @@ class ClassificationEngine:
         this would be augmented with LLM-based reasoning for complex cases.
         """
 
-        rules_applied = []
-        rationale_parts = []
-        warnings = []
-        references = ["Medical Devices Regulations SOR/98-282, Schedule 1"]
+        rules_applied: list[str] = []
+        rationale_parts: list[str] = []
+        warnings: list[str] = []
+        references: list[str] = ["Medical Devices Regulations SOR/98-282, Schedule 1"]
 
         # IVD devices have specific rules
         if device_info.is_ivd:
@@ -222,14 +221,16 @@ class ClassificationEngine:
             rationale="\n".join(rationale_parts),
             is_samd=False,
             confidence=0.75,
-            warnings=["Verify classification against specific Schedule 1 rules for your device type"],
+            warnings=[
+                "Verify classification against specific Schedule 1 rules for your device type"
+            ],
             references=references,
         )
 
     def _classify_ivd(
         self,
         device_info: DeviceInfo,
-    ) -> Tuple[DeviceClass, list, str]:
+    ) -> tuple[DeviceClass, list, str]:
         """Classify In-Vitro Diagnostic devices."""
 
         # Simplified IVD classification
@@ -238,7 +239,10 @@ class ClassificationEngine:
         intended_use_lower = device_info.intended_use.lower()
 
         # Class IV IVDs: Blood screening, high-risk transmissible diseases
-        if any(term in intended_use_lower for term in ["hiv", "hepatitis", "blood screening", "transfusion"]):
+        if any(
+            term in intended_use_lower
+            for term in ["hiv", "hepatitis", "blood screening", "transfusion"]
+        ):
             return (
                 DeviceClass.CLASS_IV,
                 ["Schedule 1, Rule 15 (High-risk IVD)"],
@@ -246,7 +250,10 @@ class ClassificationEngine:
             )
 
         # Class III IVDs: Moderate risk diagnostics
-        if any(term in intended_use_lower for term in ["cancer", "genetic", "prenatal", "companion diagnostic"]):
+        if any(
+            term in intended_use_lower
+            for term in ["cancer", "genetic", "prenatal", "companion diagnostic"]
+        ):
             return (
                 DeviceClass.CLASS_III,
                 ["Schedule 1, Rule 14 (Moderate-risk IVD)"],
@@ -275,7 +282,7 @@ classification_engine = ClassificationEngine()
 
 def classify_device(
     device_info: DeviceInfo,
-    samd_info: Optional[SaMDInfo] = None,
+    samd_info: SaMDInfo | None = None,
 ) -> ClassificationResult:
     """Convenience function for device classification."""
     return classification_engine.classify_device(device_info, samd_info)

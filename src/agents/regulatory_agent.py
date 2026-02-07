@@ -8,14 +8,13 @@ medical device regulations, combining:
 - Conversational memory
 """
 
-from typing import List, Dict, Any, Optional, TypedDict, Annotated
 import operator
+from typing import Annotated, Any, TypedDict
 
 from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from configs.settings import settings
@@ -57,11 +56,11 @@ Always be helpful, accurate, and cite your sources when discussing regulations."
 class AgentState(TypedDict):
     """State maintained throughout the agent conversation."""
 
-    messages: Annotated[List[BaseMessage], operator.add]
-    device_info: Optional[Dict[str, Any]]
-    classification_result: Optional[Dict[str, Any]]
-    pathway_result: Optional[Dict[str, Any]]
-    checklist_result: Optional[Dict[str, Any]]
+    messages: Annotated[list[BaseMessage], operator.add]
+    device_info: dict[str, Any] | None
+    classification_result: dict[str, Any] | None
+    pathway_result: dict[str, Any] | None
+    checklist_result: dict[str, Any] | None
 
 
 class RegulatoryAgent:
@@ -73,7 +72,7 @@ class RegulatoryAgent:
 
     def __init__(
         self,
-        model_name: Optional[str] = None,
+        model_name: str | None = None,
         temperature: float = 0.1,
     ):
         self.logger = get_logger(self.__class__.__name__)
@@ -101,7 +100,7 @@ class RegulatoryAgent:
             "checklist_result": None,
         }
 
-    def _create_llm(self):
+    def _create_llm(self) -> ChatAnthropic | ChatOpenAI:
         """Create the LLM instance based on configuration."""
         if "claude" in self.model_name.lower():
             return ChatAnthropic(
@@ -138,7 +137,7 @@ class RegulatoryAgent:
             {
                 "continue": "tools",
                 "end": END,
-            }
+            },
         )
 
         # Tools always return to agent
@@ -146,7 +145,7 @@ class RegulatoryAgent:
 
         return workflow.compile()
 
-    def _call_model(self, state: AgentState) -> Dict[str, Any]:
+    def _call_model(self, state: AgentState) -> dict[str, Any]:
         """Call the LLM with the current state."""
         messages = state["messages"]
 
@@ -193,13 +192,13 @@ class RegulatoryAgent:
         # Get the last AI message
         for message in reversed(result["messages"]):
             if isinstance(message, AIMessage):
-                response = message.content
+                response = str(message.content)
                 self.logger.info(f"Agent response: {response[:100]}...")
                 return response
 
         return "I apologize, but I couldn't generate a response. Please try again."
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset the conversation state."""
         self._state = {
             "messages": [],
@@ -210,7 +209,7 @@ class RegulatoryAgent:
         }
         self.logger.info("Conversation reset")
 
-    def get_conversation_history(self) -> List[Dict[str, str]]:
+    def get_conversation_history(self) -> list[dict[str, str]]:
         """Get the conversation history."""
         history = []
         for message in self._state["messages"]:
@@ -229,10 +228,10 @@ class SimpleRegulatoryAgent:
     Uses direct tool calling for basic functionality.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = get_logger(self.__class__.__name__)
         self.tools = get_agent_tools()
-        self.conversation_history: List[Dict[str, str]] = []
+        self.conversation_history: list[dict[str, str]] = []
 
     def chat(self, user_message: str) -> str:
         """Process user message and generate response."""
@@ -280,14 +279,20 @@ class SimpleRegulatoryAgent:
         """Handle regulatory pathway queries."""
         # Try to extract device class from message
         for class_name in ["IV", "III", "II", "I"]:
-            if f"class {class_name.lower()}" in message.lower() or f"class{class_name.lower()}" in message.lower():
+            if (
+                f"class {class_name.lower()}" in message.lower()
+                or f"class{class_name.lower()}" in message.lower()
+            ):
                 from src.agents.tools import get_regulatory_pathway
-                result = get_regulatory_pathway.invoke({
-                    "device_class": class_name,
-                    "is_software": "software" in message.lower(),
-                    "has_mdel": False,
-                    "has_qms_certificate": False,
-                })
+
+                result = get_regulatory_pathway.invoke(
+                    {
+                        "device_class": class_name,
+                        "is_software": "software" in message.lower(),
+                        "has_mdel": False,
+                        "has_qms_certificate": False,
+                    }
+                )
                 return self._format_pathway_response(result)
 
         return (
@@ -348,7 +353,7 @@ class SimpleRegulatoryAgent:
             "What would you like help with?"
         )
 
-    def _format_pathway_response(self, result: Dict[str, Any]) -> str:
+    def _format_pathway_response(self, result: dict[str, Any]) -> str:
         """Format pathway result as readable text."""
         if "error" in result:
             return f"Error: {result['error']}"
@@ -370,19 +375,21 @@ class SimpleRegulatoryAgent:
             if step["fees"]:
                 lines.append(f"   Fee: ${step['fees']:,.0f} CAD")
 
-        lines.extend([
-            "",
-            "### Timeline:",
-            f"- Minimum: {result['timeline']['min_days']} days",
-            f"- Maximum: {result['timeline']['max_days']} days",
-            "",
-            "### Total Fees:",
-            f"- **${result['fees']['total']:,.0f} CAD**",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Timeline:",
+                f"- Minimum: {result['timeline']['min_days']} days",
+                f"- Maximum: {result['timeline']['max_days']} days",
+                "",
+                "### Total Fees:",
+                f"- **${result['fees']['total']:,.0f} CAD**",
+            ]
+        )
 
         return "\n".join(lines)
 
-    def _format_fee_response(self, result: Dict[str, Any]) -> str:
+    def _format_fee_response(self, result: dict[str, Any]) -> str:
         """Format fee result as readable text."""
         if "error" in result:
             return f"Error: {result['error']}"
@@ -390,8 +397,8 @@ class SimpleRegulatoryAgent:
         lines = [
             f"## Health Canada Fees - Class {result['device_class']}",
             "",
-            f"| Fee Type | Amount |",
-            f"|----------|--------|",
+            "| Fee Type | Amount |",
+            "|----------|--------|",
             f"| MDEL Application | ${result['mdel_application_fee']:,} CAD |",
             f"| MDL Application | ${result['mdl_application_fee']:,} CAD |",
             f"| Annual Right-to-Sell | ${result['annual_right_to_sell_fee']:,} CAD |",
@@ -407,6 +414,6 @@ class SimpleRegulatoryAgent:
 
         return "\n".join(lines)
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset conversation history."""
         self.conversation_history = []

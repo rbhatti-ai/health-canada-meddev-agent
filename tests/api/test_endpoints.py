@@ -6,7 +6,6 @@ and response schemas.
 """
 
 import pytest
-from fastapi.testclient import TestClient
 
 
 @pytest.mark.api

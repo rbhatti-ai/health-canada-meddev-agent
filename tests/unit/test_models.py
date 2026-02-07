@@ -89,7 +89,7 @@ class TestSaMDInfo:
     """Test SaMDInfo model."""
 
     def test_valid_samd_info(self):
-        from src.core.models import SaMDInfo, HealthcareSituation, SaMDCategory
+        from src.core.models import HealthcareSituation, SaMDCategory, SaMDInfo
 
         samd = SaMDInfo(
             healthcare_situation=HealthcareSituation.SERIOUS,
@@ -99,7 +99,7 @@ class TestSaMDInfo:
         assert samd.uses_ml is False  # Default
 
     def test_samd_with_ml(self):
-        from src.core.models import SaMDInfo, HealthcareSituation, SaMDCategory
+        from src.core.models import HealthcareSituation, SaMDCategory, SaMDInfo
 
         samd = SaMDInfo(
             healthcare_situation=HealthcareSituation.CRITICAL,

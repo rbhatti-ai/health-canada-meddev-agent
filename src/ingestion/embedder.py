@@ -7,7 +7,6 @@ Supports multiple embedding providers:
 - Local models via sentence-transformers
 """
 
-from typing import List, Optional
 from abc import ABC, abstractmethod
 
 from openai import OpenAI
@@ -23,12 +22,12 @@ class BaseEmbedder(ABC):
     """Abstract base class for embedding generators."""
 
     @abstractmethod
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a list of texts."""
         pass
 
     @abstractmethod
-    def embed_query(self, query: str) -> List[float]:
+    def embed_query(self, query: str) -> list[float]:
         """Generate embedding for a single query."""
         pass
 
@@ -51,7 +50,7 @@ class OpenAIEmbedder(BaseEmbedder):
     def __init__(
         self,
         model: str = "text-embedding-3-small",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         batch_size: int = 100,
     ):
         self.model = model
@@ -66,7 +65,7 @@ class OpenAIEmbedder(BaseEmbedder):
     def dimensions(self) -> int:
         return self._dimensions
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """
         Generate embeddings for multiple texts.
 
@@ -79,7 +78,7 @@ class OpenAIEmbedder(BaseEmbedder):
 
         # Process in batches
         for i in range(0, len(texts), self.batch_size):
-            batch = texts[i:i + self.batch_size]
+            batch = texts[i : i + self.batch_size]
             self.logger.debug(f"Embedding batch {i // self.batch_size + 1}")
 
             try:
@@ -97,7 +96,7 @@ class OpenAIEmbedder(BaseEmbedder):
 
         return all_embeddings
 
-    def embed_query(self, query: str) -> List[float]:
+    def embed_query(self, query: str) -> list[float]:
         """Generate embedding for a single query."""
         embeddings = self.embed_texts([query])
         return embeddings[0] if embeddings else [0.0] * self._dimensions
@@ -115,7 +114,7 @@ class EmbeddingGenerator:
 
     def __init__(
         self,
-        embedder: Optional[BaseEmbedder] = None,
+        embedder: BaseEmbedder | None = None,
     ):
         self.embedder = embedder or OpenAIEmbedder(
             model=settings.embedding_model,
@@ -124,8 +123,8 @@ class EmbeddingGenerator:
 
     def embed_chunks(
         self,
-        chunks: List[DocumentChunk],
-    ) -> List[tuple[DocumentChunk, List[float]]]:
+        chunks: list[DocumentChunk],
+    ) -> list[tuple[DocumentChunk, list[float]]]:
         """
         Generate embeddings for document chunks.
 
@@ -147,12 +146,12 @@ class EmbeddingGenerator:
         embeddings = self.embedder.embed_texts(texts)
 
         # Pair chunks with embeddings
-        results = list(zip(chunks, embeddings))
+        results = list(zip(chunks, embeddings, strict=True))
 
         self.logger.info(f"Generated {len(results)} embeddings")
         return results
 
-    def embed_query(self, query: str) -> List[float]:
+    def embed_query(self, query: str) -> list[float]:
         """Generate embedding for a search query."""
         return self.embedder.embed_query(query)
 
@@ -166,11 +165,11 @@ class EmbeddingGenerator:
 embedding_generator = EmbeddingGenerator()
 
 
-def embed_chunks(chunks: List[DocumentChunk]) -> List[tuple[DocumentChunk, List[float]]]:
+def embed_chunks(chunks: list[DocumentChunk]) -> list[tuple[DocumentChunk, list[float]]]:
     """Convenience function for chunk embedding."""
     return embedding_generator.embed_chunks(chunks)
 
 
-def embed_query(query: str) -> List[float]:
+def embed_query(query: str) -> list[float]:
     """Convenience function for query embedding."""
     return embedding_generator.embed_query(query)

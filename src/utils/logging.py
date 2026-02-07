@@ -4,7 +4,6 @@ Structured logging configuration using structlog.
 
 import logging
 import sys
-from typing import Optional
 
 import structlog
 
@@ -59,7 +58,7 @@ def setup_logging(
     )
 
 
-def get_logger(name: Optional[str] = None) -> structlog.stdlib.BoundLogger:
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """
     Get a structured logger instance.
 

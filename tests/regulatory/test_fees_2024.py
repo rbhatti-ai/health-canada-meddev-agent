@@ -11,7 +11,7 @@ Source: https://www.canada.ca/en/health-canada/services/drugs-health-products/me
 import pytest
 
 from src.core.models import DeviceClass
-from src.core.pathway import PathwayAdvisor, FEES_2024
+from src.core.pathway import FEES_2024, PathwayAdvisor
 
 
 @pytest.mark.regulatory
@@ -75,11 +75,10 @@ class TestPathwayFeeCalculations:
 
     def test_class_ii_total_without_mdel(self, advisor):
         """Class II total (no MDEL): MDEL + MDL = $4,590 + $468 = $5,058."""
-        from src.core.models import DeviceInfo, ClassificationResult
+        from src.core.models import ClassificationResult, DeviceInfo
 
         device = DeviceInfo(
-            name="Test", description="Test", intended_use="Test",
-            manufacturer_name="Test"
+            name="Test", description="Test", intended_use="Test", manufacturer_name="Test"
         )
         classification = ClassificationResult(
             device_class=DeviceClass.CLASS_II,
@@ -95,11 +94,10 @@ class TestPathwayFeeCalculations:
 
     def test_class_iii_total_without_mdel(self, advisor):
         """Class III total (no MDEL): MDEL + MDL = $4,590 + $7,658 = $12,248."""
-        from src.core.models import DeviceInfo, ClassificationResult
+        from src.core.models import ClassificationResult, DeviceInfo
 
         device = DeviceInfo(
-            name="Test", description="Test", intended_use="Test",
-            manufacturer_name="Test"
+            name="Test", description="Test", intended_use="Test", manufacturer_name="Test"
         )
         classification = ClassificationResult(
             device_class=DeviceClass.CLASS_III,
@@ -115,11 +113,10 @@ class TestPathwayFeeCalculations:
 
     def test_class_iv_total_without_mdel(self, advisor):
         """Class IV total (no MDEL): MDEL + MDL = $4,590 + $23,130 = $27,720."""
-        from src.core.models import DeviceInfo, ClassificationResult
+        from src.core.models import ClassificationResult, DeviceInfo
 
         device = DeviceInfo(
-            name="Test", description="Test", intended_use="Test",
-            manufacturer_name="Test"
+            name="Test", description="Test", intended_use="Test", manufacturer_name="Test"
         )
         classification = ClassificationResult(
             device_class=DeviceClass.CLASS_IV,
@@ -135,11 +132,10 @@ class TestPathwayFeeCalculations:
 
     def test_class_iii_with_existing_mdel(self, advisor):
         """Class III with existing MDEL: MDL only = $7,658."""
-        from src.core.models import DeviceInfo, ClassificationResult
+        from src.core.models import ClassificationResult, DeviceInfo
 
         device = DeviceInfo(
-            name="Test", description="Test", intended_use="Test",
-            manufacturer_name="Test"
+            name="Test", description="Test", intended_use="Test", manufacturer_name="Test"
         )
         classification = ClassificationResult(
             device_class=DeviceClass.CLASS_III,

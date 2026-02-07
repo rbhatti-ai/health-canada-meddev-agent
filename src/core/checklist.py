@@ -5,25 +5,38 @@ Provides dynamic checklist generation and tracking based on device
 classification and regulatory requirements.
 """
 
-from typing import List, Optional, Dict, Any
-from datetime import date
 import json
+from datetime import date
+from typing import Any, TypedDict
 
 from src.core.models import (
+    Checklist,
+    ChecklistItem,
+    ClassificationResult,
+    ComplianceStatus,
     DeviceClass,
     DeviceInfo,
-    ClassificationResult,
-    ChecklistItem,
-    Checklist,
-    ComplianceStatus,
 )
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
+class ChecklistItemData(TypedDict, total=False):
+    """Type definition for master checklist item data."""
+
+    id: str
+    category: str
+    title: str
+    description: str
+    required: bool
+    device_classes: list[DeviceClass]
+    guidance_reference: str | None
+    form_number: str | None
+
+
 # Master checklist template with all possible items
-MASTER_CHECKLIST_ITEMS = [
+MASTER_CHECKLIST_ITEMS: list[ChecklistItemData] = [
     # MDEL Requirements
     {
         "id": "mdel_application",
@@ -31,7 +44,12 @@ MASTER_CHECKLIST_ITEMS = [
         "title": "MDEL Application (FRM-0292)",
         "description": "Complete and submit Medical Device Establishment Licence application form FRM-0292. Required for any company importing, distributing, or selling medical devices in Canada.",
         "required": True,
-        "device_classes": [DeviceClass.CLASS_I, DeviceClass.CLASS_II, DeviceClass.CLASS_III, DeviceClass.CLASS_IV],
+        "device_classes": [
+            DeviceClass.CLASS_I,
+            DeviceClass.CLASS_II,
+            DeviceClass.CLASS_III,
+            DeviceClass.CLASS_IV,
+        ],
         "guidance_reference": "GUI-0016: Guidance on Medical Device Establishment Licensing",
         "form_number": "FRM-0292",
     },
@@ -189,7 +207,12 @@ MASTER_CHECKLIST_ITEMS = [
         "title": "Device Labeling",
         "description": "Complete labeling including device label, packaging, and Instructions for Use (IFU) in English and French.",
         "required": True,
-        "device_classes": [DeviceClass.CLASS_I, DeviceClass.CLASS_II, DeviceClass.CLASS_III, DeviceClass.CLASS_IV],
+        "device_classes": [
+            DeviceClass.CLASS_I,
+            DeviceClass.CLASS_II,
+            DeviceClass.CLASS_III,
+            DeviceClass.CLASS_IV,
+        ],
     },
     # IMDRF ToC
     {
@@ -215,7 +238,7 @@ class ChecklistManager:
     - Export capabilities
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = get_logger(self.__class__.__name__)
         self._master_items = MASTER_CHECKLIST_ITEMS
 
@@ -241,10 +264,12 @@ class ChecklistManager:
         device_class = classification.device_class
         is_samd = classification.is_samd or device_info.is_software
 
-        items = []
+        items: list[ChecklistItem] = []
         for item_data in self._master_items:
             # Check if item applies to this device class
             applicable_classes = item_data.get("device_classes", [])
+            if applicable_classes is None:
+                applicable_classes = []
             if device_class not in applicable_classes:
                 continue
 
@@ -287,7 +312,7 @@ class ChecklistManager:
         self.logger.info(f"Generated checklist with {len(items)} items")
         return checklist
 
-    def _set_dependencies(self, items: List[ChecklistItem]) -> List[ChecklistItem]:
+    def _set_dependencies(self, items: list[ChecklistItem]) -> list[ChecklistItem]:
         """Set up item dependencies based on logical ordering."""
         dependency_map = {
             "mdl_application_form": ["mdel_application", "qms_iso13485"],
@@ -302,10 +327,7 @@ class ChecklistManager:
         for item in items:
             if item.id in dependency_map:
                 # Only add dependencies that exist in the checklist
-                valid_deps = [
-                    dep for dep in dependency_map[item.id]
-                    if dep in item_ids
-                ]
+                valid_deps = [dep for dep in dependency_map[item.id] if dep in item_ids]
                 item.dependencies = valid_deps
 
         return items
@@ -315,7 +337,7 @@ class ChecklistManager:
         checklist: Checklist,
         item_id: str,
         status: ComplianceStatus,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> Checklist:
         """
         Update the status of a checklist item.
@@ -339,7 +361,7 @@ class ChecklistManager:
         checklist.last_updated = date.today()
         return checklist
 
-    def get_next_actions(self, checklist: Checklist) -> List[ChecklistItem]:
+    def get_next_actions(self, checklist: Checklist) -> list[ChecklistItem]:
         """
         Get items that are ready to be worked on.
 
@@ -354,24 +376,20 @@ class ChecklistManager:
             List of actionable items
         """
         completed_ids = {
-            item.id for item in checklist.items
-            if item.status == ComplianceStatus.COMPLETED
+            item.id for item in checklist.items if item.status == ComplianceStatus.COMPLETED
         }
 
         actionable = []
         for item in checklist.items:
             if item.status in [ComplianceStatus.NOT_STARTED, ComplianceStatus.IN_PROGRESS]:
                 # Check if all dependencies are complete
-                deps_complete = all(
-                    dep in completed_ids
-                    for dep in item.dependencies
-                )
+                deps_complete = all(dep in completed_ids for dep in item.dependencies)
                 if deps_complete:
                     actionable.append(item)
 
         return actionable
 
-    def get_gap_analysis(self, checklist: Checklist) -> Dict[str, Any]:
+    def get_gap_analysis(self, checklist: Checklist) -> dict[str, Any]:
         """
         Analyze gaps in checklist completion.
 
@@ -382,25 +400,17 @@ class ChecklistManager:
             Gap analysis report
         """
         total = len(checklist.items)
-        completed = sum(
-            1 for item in checklist.items
-            if item.status == ComplianceStatus.COMPLETED
-        )
+        completed = sum(1 for item in checklist.items if item.status == ComplianceStatus.COMPLETED)
         in_progress = sum(
-            1 for item in checklist.items
-            if item.status == ComplianceStatus.IN_PROGRESS
+            1 for item in checklist.items if item.status == ComplianceStatus.IN_PROGRESS
         )
         not_started = sum(
-            1 for item in checklist.items
-            if item.status == ComplianceStatus.NOT_STARTED
+            1 for item in checklist.items if item.status == ComplianceStatus.NOT_STARTED
         )
-        blocked = sum(
-            1 for item in checklist.items
-            if item.status == ComplianceStatus.BLOCKED
-        )
+        blocked = sum(1 for item in checklist.items if item.status == ComplianceStatus.BLOCKED)
 
         # Group by category
-        by_category = {}
+        by_category: dict[str, dict[str, Any]] = {}
         for item in checklist.items:
             if item.category not in by_category:
                 by_category[item.category] = {"total": 0, "completed": 0, "items": []}
@@ -422,8 +432,7 @@ class ChecklistManager:
             "by_category": by_category,
             "next_actions": [item.title for item in self.get_next_actions(checklist)],
             "blockers": [
-                item.title for item in checklist.items
-                if item.status == ComplianceStatus.BLOCKED
+                item.title for item in checklist.items if item.status == ComplianceStatus.BLOCKED
             ],
         }
 
@@ -487,7 +496,7 @@ class ChecklistManager:
         ]
 
         # Group by category
-        categories = {}
+        categories: dict[str, list[ChecklistItem]] = {}
         for item in checklist.items:
             if item.category not in categories:
                 categories[item.category] = []
@@ -524,7 +533,7 @@ checklist_manager = ChecklistManager()
 def generate_checklist(
     classification: ClassificationResult,
     device_info: DeviceInfo,
-    **kwargs,
+    include_optional: bool = True,
 ) -> Checklist:
     """Convenience function for checklist generation."""
-    return checklist_manager.generate_checklist(classification, device_info, **kwargs)
+    return checklist_manager.generate_checklist(classification, device_info, include_optional)

@@ -4,11 +4,11 @@ Hybrid retriever combining vector search with keyword matching.
 Provides intelligent document retrieval for RAG applications.
 """
 
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any
 
-from src.retrieval.vectorstore import VectorStoreManager, vector_store
 from src.ingestion.embedder import EmbeddingGenerator, embedding_generator
+from src.retrieval.vectorstore import VectorStoreManager, vector_store
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,11 +19,11 @@ class RetrievalResult:
     """A single retrieval result with relevance information."""
 
     content: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     score: float
     source: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "content": self.content,
             "metadata": self.metadata,
@@ -57,8 +57,8 @@ class HybridRetriever:
 
     def __init__(
         self,
-        vector_store_manager: Optional[VectorStoreManager] = None,
-        embedder: Optional[EmbeddingGenerator] = None,
+        vector_store_manager: VectorStoreManager | None = None,
+        embedder: EmbeddingGenerator | None = None,
         top_k: int = 5,
         score_threshold: float = 0.5,
     ):
@@ -71,11 +71,11 @@ class HybridRetriever:
     def retrieve(
         self,
         query: str,
-        top_k: Optional[int] = None,
-        filter_category: Optional[str] = None,
-        filter_source: Optional[str] = None,
+        top_k: int | None = None,
+        filter_category: str | None = None,
+        filter_source: str | None = None,
         expand_query: bool = True,
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """
         Retrieve relevant documents for a query.
 
@@ -128,12 +128,14 @@ class HybridRetriever:
                 continue
             seen_content.add(content_hash)
 
-            retrieval_results.append(RetrievalResult(
-                content=result["content"],
-                metadata=result["metadata"],
-                score=result["score"],
-                source=result["metadata"].get("source", "unknown"),
-            ))
+            retrieval_results.append(
+                RetrievalResult(
+                    content=result["content"],
+                    metadata=result["metadata"],
+                    score=result["score"],
+                    source=result["metadata"].get("source", "unknown"),
+                )
+            )
 
             if len(retrieval_results) >= k:
                 break
@@ -145,8 +147,8 @@ class HybridRetriever:
         self,
         query: str,
         context_window: int = 1,
-        **kwargs,
-    ) -> List[RetrievalResult]:
+        **kwargs: Any,
+    ) -> list[RetrievalResult]:
         """
         Retrieve documents with surrounding context chunks.
 
@@ -216,7 +218,7 @@ class HybridRetriever:
         self,
         source: str,
         chunk_index: int,
-    ) -> Optional[RetrievalResult]:
+    ) -> RetrievalResult | None:
         """Find a specific chunk by source and index."""
         try:
             # This is a simplified implementation
@@ -243,7 +245,7 @@ class HybridRetriever:
     def _combine_chunks(
         self,
         main_chunk: RetrievalResult,
-        adjacent: List[RetrievalResult],
+        adjacent: list[RetrievalResult],
     ) -> str:
         """Combine main chunk with adjacent chunks."""
         # Sort by chunk index
@@ -259,6 +261,6 @@ class HybridRetriever:
 hybrid_retriever = HybridRetriever()
 
 
-def retrieve(query: str, **kwargs) -> List[RetrievalResult]:
+def retrieve(query: str, **kwargs: Any) -> list[RetrievalResult]:
     """Convenience function for document retrieval."""
     return hybrid_retriever.retrieve(query, **kwargs)

@@ -1,14 +1,11 @@
 """Unit tests for regulatory pathway advisor."""
 
-import pytest
 from datetime import date
 
-from src.core.models import (
-    DeviceClass,
-    DeviceInfo,
-    ClassificationResult,
-)
-from src.core.pathway import PathwayAdvisor, get_pathway, FEES_2024
+import pytest
+
+from src.core.models import ClassificationResult, DeviceClass, DeviceInfo
+from src.core.pathway import FEES_2024, PathwayAdvisor, get_pathway
 
 
 @pytest.fixture
@@ -79,9 +76,7 @@ class TestPathwayGeneration:
     def test_new_company_includes_mdel_step(self, pathway_advisor, basic_device):
         """New companies (no MDEL) should have MDEL step."""
         classification = make_classification(DeviceClass.CLASS_II)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=False
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=False)
 
         assert pathway.requires_mdel is True
         assert any("MDEL" in step.name for step in pathway.steps)
@@ -89,9 +84,7 @@ class TestPathwayGeneration:
     def test_existing_mdel_skips_mdel_step(self, pathway_advisor, basic_device):
         """Companies with MDEL should skip MDEL step."""
         classification = make_classification(DeviceClass.CLASS_II)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=True
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=True)
 
         assert pathway.requires_mdel is False
         assert not any("MDEL" in step.name for step in pathway.steps)
@@ -117,36 +110,28 @@ class TestFeeCalculation:
     def test_class_ii_fee(self, pathway_advisor, basic_device):
         """Class II MDL fee is correct."""
         classification = make_classification(DeviceClass.CLASS_II)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=True
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=True)
 
         assert pathway.fees.mdl_fee == FEES_2024["mdl_class_ii"]
 
     def test_class_iii_fee(self, pathway_advisor, basic_device):
         """Class III MDL fee is correct."""
         classification = make_classification(DeviceClass.CLASS_III)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=True
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=True)
 
         assert pathway.fees.mdl_fee == FEES_2024["mdl_class_iii"]
 
     def test_class_iv_fee(self, pathway_advisor, basic_device):
         """Class IV MDL fee is correct."""
         classification = make_classification(DeviceClass.CLASS_IV)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=True
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=True)
 
         assert pathway.fees.mdl_fee == FEES_2024["mdl_class_iv"]
 
     def test_mdel_fee_included_for_new_company(self, pathway_advisor, basic_device):
         """MDEL fee included when company doesn't have one."""
         classification = make_classification(DeviceClass.CLASS_II)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=False
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=False)
 
         assert pathway.fees.mdel_fee == FEES_2024["mdel_application"]
         assert pathway.fees.total == pathway.fees.mdel_fee + pathway.fees.mdl_fee
@@ -154,9 +139,7 @@ class TestFeeCalculation:
     def test_no_mdel_fee_for_existing_holder(self, pathway_advisor, basic_device):
         """No MDEL fee when company already has MDEL."""
         classification = make_classification(DeviceClass.CLASS_II)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=True
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=True)
 
         assert pathway.fees.mdel_fee == 0
 
@@ -167,9 +150,7 @@ class TestTimeline:
     def test_class_ii_timeline(self, pathway_advisor, basic_device):
         """Class II has 15-30 day review timeline."""
         classification = make_classification(DeviceClass.CLASS_II)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=True
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=True)
 
         assert pathway.timeline.total_days_min >= 15
         assert pathway.timeline.total_days_max <= 60  # Some buffer
@@ -177,18 +158,14 @@ class TestTimeline:
     def test_class_iii_timeline(self, pathway_advisor, basic_device):
         """Class III has 75+ day review timeline."""
         classification = make_classification(DeviceClass.CLASS_III)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=True
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=True)
 
         assert pathway.timeline.total_days_min >= 75
 
     def test_class_iv_timeline(self, pathway_advisor, basic_device):
         """Class IV has 90+ day review timeline."""
         classification = make_classification(DeviceClass.CLASS_IV)
-        pathway = pathway_advisor.get_pathway(
-            classification, basic_device, has_mdel=True
-        )
+        pathway = pathway_advisor.get_pathway(classification, basic_device, has_mdel=True)
 
         assert pathway.timeline.total_days_min >= 90
 
