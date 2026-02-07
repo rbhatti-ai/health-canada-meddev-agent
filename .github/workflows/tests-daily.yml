@@ -1,0 +1,40 @@
+name: tests-daily
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: ["main"]
+  schedule:
+    # 16:00 UTC ≈ 09:00 America/Edmonton during MST (winter). Will shift by 1h during DST.
+    - cron: "0 16 * * *"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Show versions
+        run: |
+          python --version
+          python -m pip --version
+
+      - name: Bootstrap deps
+        run: |
+          make bootstrap
+
+      - name: Run daily suite
+        run: |
+          make daily

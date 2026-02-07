@@ -1,0 +1,39 @@
+name: tests-weekly
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 16:15 UTC Mondays ≈ 09:15 America/Edmonton during MST (winter). Will shift by 1h during DST.
+    - cron: "15 16 * * 1"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Show versions
+        run: |
+          python --version
+          python -m pip --version
+          docker --version || true
+          docker compose version || true
+
+      - name: Bootstrap deps
+        run: |
+          make bootstrap
+
+      - name: Run weekly suite
+        run: |
+          make weekly
