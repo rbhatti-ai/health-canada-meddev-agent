@@ -1,218 +1,88 @@
-# CI/CD Pipeline for Health Canada MedDev Agent
-# Runs on every push and pull request
-
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
+  workflow_dispatch:
   pull_request:
-    branches: [main]
-
-env:
-  PYTHON_VERSION: "3.11"
-  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  push:
+    branches: ["main"]
 
 jobs:
-  # ============================================================
-  # Linting and Type Checking
-  # ============================================================
-  lint:
+  lint_type_check:
     name: Lint & Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install (project + dev + prod)
         run: |
-          pip install ruff mypy black isort
-          pip install pydantic types-requests
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,prod]"
+      - name: Ruff
+        run: |
+          ruff --version
+          ruff check .
+      - name: Mypy
+        run: |
+          mypy --version
+          mypy src
 
-      - name: Run Ruff (linting)
-        run: ruff check src/
-
-      - name: Run Black (formatting check)
-        run: black --check src/ tests/
-
-      - name: Run isort (import sorting check)
-        run: isort --check-only --profile black src/ tests/
-
-      - name: Run MyPy (type checking)
-        run: mypy src/ --ignore-missing-imports
-
-  # ============================================================
-  # Unit Tests
-  # ============================================================
-  unit-tests:
+  unit_tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    needs: [lint_type_check]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install dependencies
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install (project + dev + prod)
         run: |
-          pip install -e ".[dev]"
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,prod]"
+      - name: Run unit+api (make daily)
+        run: |
+          make daily
 
-      - name: Run Unit Tests
-        run: pytest tests/unit/ -v --tb=short
-
-  # ============================================================
-  # Regulatory Accuracy Tests
-  # ============================================================
-  regulatory-tests:
+  regulatory_accuracy:
     name: Regulatory Accuracy
     runs-on: ubuntu-latest
+    needs: [lint_type_check]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install (project + dev + prod)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,prod]"
+      - name: Run regulatory suite
+        run: |
+          make test-regulatory
 
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-
-      - name: Run Regulatory Tests
-        run: pytest tests/regulatory/ -v --tb=short
-
-  # ============================================================
-  # API Tests
-  # ============================================================
-  api-tests:
-    name: API Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-
-      - name: Run API Tests
-        run: pytest tests/api/ -v --tb=short -m "not slow"
-
-  # ============================================================
-  # Integration Tests (requires API key)
-  # ============================================================
-  integration-tests:
+  integration_tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: [unit_tests]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-
-      - name: Run Integration Tests
-        run: pytest tests/integration/ -v --tb=short -m "not slow"
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
-  # ============================================================
-  # Coverage Report
-  # ============================================================
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    needs: [unit-tests, regulatory-tests]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install (project + dev + prod)
         run: |
-          pip install -e ".[dev]"
-          pip install pytest-cov
-
-      - name: Run tests with coverage
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,prod]"
+      - name: Docker sanity
         run: |
-          pytest tests/unit/ tests/regulatory/ \
-            --cov=src \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-fail-under=70
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          fail_ci_if_error: false
-
-  # ============================================================
-  # Build Check
-  # ============================================================
-  build:
-    name: Build Check
-    runs-on: ubuntu-latest
-    needs: [lint, unit-tests, regulatory-tests]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install build tools
-        run: pip install build
-
-      - name: Build package
-        run: python -m build
-
-      - name: Check package
+          docker --version
+          docker compose version
+      - name: Run integration suite (compose up/down handled by Makefile)
         run: |
-          pip install twine
-          twine check dist/*
+          make test-integration
