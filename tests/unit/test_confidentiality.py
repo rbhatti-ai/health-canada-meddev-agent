@@ -16,9 +16,14 @@ import pytest
 
 from src.core.confidentiality import (
     CLASSIFIABLE_ENTITY_TYPES,
+    CBIItem,
+    CBIRequest,
     ConfidentialityLevel,
     ConfidentialityService,
     ConfidentialityTag,
+    create_cbi_items_from_tags,
+    generate_cbi_request,
+    generate_cbi_request_document,
     get_confidentiality_service,
     reset_confidentiality_service,
 )
@@ -520,3 +525,320 @@ class TestConfidentialityLevels:
         assert "claim" in CLASSIFIABLE_ENTITY_TYPES
         assert "design_file" in CLASSIFIABLE_ENTITY_TYPES
         assert len(CLASSIFIABLE_ENTITY_TYPES) >= 5
+
+
+# =============================================================================
+# Sprint 6B: CBI Request Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestCBIItemModel:
+    """Tests for CBIItem Pydantic model."""
+
+    def test_valid_cbi_item(self):
+        """CBIItem should accept required fields."""
+        item = CBIItem(
+            entity_type="evidence_item",
+            entity_id=uuid4(),
+            description="Proprietary test data",
+            justification="Contains trade secret methodology",
+            harm_if_disclosed="Competitors could replicate process",
+        )
+        assert item.entity_type == "evidence_item"
+        assert item.confidentiality_level == "confidential_submission"  # default
+
+    def test_cbi_item_trade_secret(self):
+        """CBIItem should accept trade_secret level."""
+        item = CBIItem(
+            entity_type="artifact",
+            entity_id=uuid4(),
+            description="Manufacturing process",
+            justification="Core IP",
+            harm_if_disclosed="Loss of competitive advantage",
+            confidentiality_level="trade_secret",
+        )
+        assert item.confidentiality_level == "trade_secret"
+
+    def test_cbi_item_with_page_refs(self):
+        """CBIItem should accept page references."""
+        item = CBIItem(
+            entity_type="evidence_item",
+            entity_id=uuid4(),
+            description="Test results",
+            justification="Proprietary",
+            harm_if_disclosed="Competitive harm",
+            page_references=["Section 5.2", "Pages 42-48"],
+        )
+        assert len(item.page_references) == 2
+
+
+@pytest.mark.unit
+class TestCBIRequestModel:
+    """Tests for CBIRequest Pydantic model."""
+
+    def test_valid_cbi_request(self, org_id):
+        """CBIRequest should accept required fields."""
+        request = CBIRequest(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Cardiac Monitor v2.0",
+        )
+        assert request.submission_reference == "MDL-2024-12345"
+        assert request.total_items == 0
+        assert request.has_attestation is False
+
+    def test_cbi_request_with_items(self, org_id):
+        """CBIRequest should track items correctly."""
+        items = [
+            CBIItem(
+                entity_type="evidence_item",
+                entity_id=uuid4(),
+                description="Test 1",
+                justification="Proprietary",
+                harm_if_disclosed="Competitive harm",
+                confidentiality_level="trade_secret",
+            ),
+            CBIItem(
+                entity_type="artifact",
+                entity_id=uuid4(),
+                description="Test 2",
+                justification="Trade secret",
+                harm_if_disclosed="Loss of advantage",
+                confidentiality_level="confidential_submission",
+            ),
+        ]
+        request = CBIRequest(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Test Device",
+            items=items,
+        )
+        assert request.total_items == 2
+        assert request.trade_secret_count == 1
+
+    def test_cbi_request_attestation(self, org_id, user_id):
+        """CBIRequest should track attestation."""
+        from datetime import UTC, datetime
+
+        request = CBIRequest(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Test Device",
+            attested_by=user_id,
+            attested_at=datetime.now(UTC),
+        )
+        assert request.has_attestation is True
+
+    def test_cbi_request_has_citation(self, org_id):
+        """CBIRequest should have citation fields."""
+        request = CBIRequest(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Test Device",
+        )
+        assert request.regulation_ref == "SOR-98-282-S43.2"
+        assert request.citation_text == "[SOR/98-282, s.43.2]"
+
+
+@pytest.mark.unit
+class TestCreateCBIItems:
+    """Tests for create_cbi_items_from_tags function."""
+
+    def test_create_items_from_tags(self, org_id):
+        """create_cbi_items_from_tags should convert tags to items."""
+        tags = [
+            ConfidentialityTag(
+                organization_id=org_id,
+                entity_type="evidence_item",
+                entity_id=uuid4(),
+                level="trade_secret",
+                justification="Proprietary method",
+                harm_if_disclosed="Competitive harm",
+            ),
+        ]
+        items = create_cbi_items_from_tags(tags)
+        assert len(items) == 1
+        assert items[0].confidentiality_level == "trade_secret"
+
+    def test_create_items_filters_non_cbi(self, org_id):
+        """create_cbi_items_from_tags should skip public and patent_pending."""
+        tags = [
+            ConfidentialityTag(
+                organization_id=org_id,
+                entity_type="evidence_item",
+                entity_id=uuid4(),
+                level="public",
+            ),
+            ConfidentialityTag(
+                organization_id=org_id,
+                entity_type="design_file",
+                entity_id=uuid4(),
+                level="patent_pending",
+                patent_application_number="CA123",
+            ),
+        ]
+        items = create_cbi_items_from_tags(tags)
+        assert len(items) == 0
+
+    def test_create_items_requires_justification(self, org_id):
+        """create_cbi_items_from_tags should require justification."""
+        tags = [
+            ConfidentialityTag(
+                organization_id=org_id,
+                entity_type="evidence_item",
+                entity_id=uuid4(),
+                level="trade_secret",
+                harm_if_disclosed="Harm description",
+            ),
+        ]
+        with pytest.raises(ValueError, match="lacks justification"):
+            create_cbi_items_from_tags(tags)
+
+    def test_create_items_requires_harm(self, org_id):
+        """create_cbi_items_from_tags should require harm_if_disclosed."""
+        tags = [
+            ConfidentialityTag(
+                organization_id=org_id,
+                entity_type="evidence_item",
+                entity_id=uuid4(),
+                level="trade_secret",
+                justification="Proprietary",
+            ),
+        ]
+        with pytest.raises(ValueError, match="lacks harm_if_disclosed"):
+            create_cbi_items_from_tags(tags)
+
+
+@pytest.mark.unit
+class TestGenerateCBIRequest:
+    """Tests for generate_cbi_request function."""
+
+    def test_generate_request(self, org_id):
+        """generate_cbi_request should create a complete request."""
+        tags = [
+            ConfidentialityTag(
+                organization_id=org_id,
+                entity_type="evidence_item",
+                entity_id=uuid4(),
+                level="trade_secret",
+                justification="Proprietary algorithm",
+                harm_if_disclosed="Loss of competitive advantage",
+            ),
+        ]
+        request = generate_cbi_request(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Test Device",
+            tags=tags,
+        )
+        assert request.submission_reference == "MDL-2024-12345"
+        assert request.total_items == 1
+        assert request.created_at is not None
+
+    def test_generate_request_with_attestation(self, org_id, user_id):
+        """generate_cbi_request should handle attestation."""
+        tags = [
+            ConfidentialityTag(
+                organization_id=org_id,
+                entity_type="artifact",
+                entity_id=uuid4(),
+                level="confidential_submission",
+                justification="Proprietary",
+                harm_if_disclosed="Competitive harm",
+            ),
+        ]
+        request = generate_cbi_request(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Test Device",
+            tags=tags,
+            attested_by=user_id,
+        )
+        assert request.has_attestation is True
+        assert request.attested_by == user_id
+
+
+@pytest.mark.unit
+class TestGenerateCBIDocument:
+    """Tests for generate_cbi_request_document function."""
+
+    def test_generate_document(self, org_id):
+        """generate_cbi_request_document should produce formatted text."""
+        from datetime import UTC, datetime
+
+        items = [
+            CBIItem(
+                entity_type="evidence_item",
+                entity_id=uuid4(),
+                description="Proprietary test data",
+                justification="Contains trade secret methodology",
+                harm_if_disclosed="Competitors could replicate",
+            ),
+        ]
+        request = CBIRequest(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Test Device",
+            items=items,
+            created_at=datetime.now(UTC),
+        )
+        doc = generate_cbi_request_document(request)
+
+        assert "CONFIDENTIAL BUSINESS INFORMATION" in doc
+        assert "MDL-2024-12345" in doc
+        assert "Test Device" in doc
+        assert "Proprietary test data" in doc
+        assert "ATTESTATION" in doc
+
+    def test_document_shows_totals(self, org_id):
+        """Document should show item totals."""
+        from datetime import UTC, datetime
+
+        items = [
+            CBIItem(
+                entity_type="evidence_item",
+                entity_id=uuid4(),
+                description="Item 1",
+                justification="J1",
+                harm_if_disclosed="H1",
+                confidentiality_level="trade_secret",
+            ),
+            CBIItem(
+                entity_type="artifact",
+                entity_id=uuid4(),
+                description="Item 2",
+                justification="J2",
+                harm_if_disclosed="H2",
+                confidentiality_level="confidential_submission",
+            ),
+        ]
+        request = CBIRequest(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Device",
+            items=items,
+            created_at=datetime.now(UTC),
+        )
+        doc = generate_cbi_request_document(request)
+
+        assert "Total CBI Items: 2" in doc
+        assert "Trade Secrets: 1" in doc
+
+    def test_document_shows_attestation_when_present(self, org_id, user_id):
+        """Document should show attestation details when attested."""
+        from datetime import UTC, datetime
+
+        request = CBIRequest(
+            organization_id=org_id,
+            submission_reference="MDL-2024-12345",
+            device_name="Device",
+            items=[],
+            created_at=datetime.now(UTC),
+            attested_by=user_id,
+            attested_at=datetime.now(UTC),
+        )
+        doc = generate_cbi_request_document(request)
+
+        assert "Attested by:" in doc
+        assert str(user_id) in doc

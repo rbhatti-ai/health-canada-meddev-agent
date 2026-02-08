@@ -493,3 +493,243 @@ def reset_confidentiality_service() -> None:
     """Reset the singleton (for testing)."""
     global _confidentiality_service
     _confidentiality_service = None
+
+
+# =============================================================================
+# CBI Request Generator (Sprint 6B)
+# =============================================================================
+
+
+class CBIItem(BaseModel):
+    """Single item in a Confidential Business Information (CBI) request.
+
+    Per SOR/98-282, Section 43.2, each CBI item must include:
+    - Description of what is confidential
+    - Justification for confidential treatment
+    - Harm if disclosed
+
+    Citation: [SOR/98-282, s.43.2]
+    """
+
+    entity_type: str = Field(..., description="Type of entity (evidence_item, artifact, etc.)")
+    entity_id: UUID = Field(..., description="ID of the entity")
+    description: str = Field(..., description="What information is confidential")
+    justification: str = Field(..., description="Why this is CBI")
+    harm_if_disclosed: str = Field(..., description="Competitive harm if disclosed to public")
+    page_references: list[str] = Field(
+        default_factory=list, description="Page/section references in submission"
+    )
+    confidentiality_level: ConfidentialityLevel = Field(
+        default="confidential_submission", description="Level of confidentiality"
+    )
+    summary_for_public_use: str | None = Field(
+        default=None, description="Public-safe summary if original is redacted"
+    )
+
+
+class CBIRequest(BaseModel):
+    """Confidential Business Information request for Health Canada submission.
+
+    Per SOR/98-282, Section 43.2:
+    - Must identify all CBI in the submission
+    - Must justify confidential treatment for each item
+    - Must describe competitive harm if disclosed
+
+    This document accompanies a regulatory submission to identify
+    which portions should not be publicly disclosed.
+
+    Citation: [SOR/98-282, s.43.2]
+    """
+
+    id: UUID | None = Field(default=None, description="Request ID")
+    organization_id: UUID = Field(..., description="Organization making the request")
+    submission_reference: str = Field(
+        ..., description="Submission ID or reference (e.g., MDL application number)"
+    )
+    device_name: str = Field(..., description="Name of the medical device")
+    items: list[CBIItem] = Field(default_factory=list, description="CBI items")
+    attestation_text: str = Field(
+        default=(
+            "The undersigned hereby certifies that the information identified "
+            "as confidential business information constitutes trade secrets or "
+            "confidential commercial information and that disclosure of such "
+            "information would cause significant competitive harm to the applicant."
+        ),
+        description="Attestation statement",
+    )
+    attested_by: UUID | None = Field(default=None, description="User who attested")
+    attested_at: datetime | None = Field(default=None, description="When attested")
+    created_at: datetime | None = Field(default=None, description="When request was created")
+    # Citation fields (Sprint 5C)
+    regulation_ref: str = Field(default="SOR-98-282-S43.2", description="Regulatory reference")
+    citation_text: str = Field(default="[SOR/98-282, s.43.2]", description="Citation")
+
+    @property
+    def total_items(self) -> int:
+        """Total number of CBI items."""
+        return len(self.items)
+
+    @property
+    def trade_secret_count(self) -> int:
+        """Number of trade secret items."""
+        return sum(1 for i in self.items if i.confidentiality_level == "trade_secret")
+
+    @property
+    def has_attestation(self) -> bool:
+        """Whether the request has been attested."""
+        return self.attested_by is not None and self.attested_at is not None
+
+
+def create_cbi_items_from_tags(
+    tags: list[ConfidentialityTag],
+) -> list[CBIItem]:
+    """
+    Create CBIItems from ConfidentialityTags.
+
+    Args:
+        tags: List of ConfidentialityTag (should be CBI candidates only)
+
+    Returns:
+        List of CBIItem ready for inclusion in a CBI request.
+
+    Raises:
+        ValueError: If a tag lacks required justification or harm description.
+    """
+    items: list[CBIItem] = []
+
+    for tag in tags:
+        if tag.level not in ("trade_secret", "confidential_submission"):
+            continue  # Only CBI-eligible levels
+
+        if not tag.justification:
+            raise ValueError(
+                f"Entity {tag.entity_type}/{tag.entity_id} lacks justification " "for CBI treatment"
+            )
+
+        if not tag.harm_if_disclosed:
+            raise ValueError(
+                f"Entity {tag.entity_type}/{tag.entity_id} lacks harm_if_disclosed "
+                "description required for CBI"
+            )
+
+        items.append(
+            CBIItem(
+                entity_type=tag.entity_type,
+                entity_id=tag.entity_id,
+                description=tag.summary_for_public_use or f"Confidential {tag.entity_type}",
+                justification=tag.justification,
+                harm_if_disclosed=tag.harm_if_disclosed,
+                confidentiality_level=tag.level,
+                summary_for_public_use=tag.summary_for_public_use,
+            )
+        )
+
+    return items
+
+
+def generate_cbi_request(
+    organization_id: UUID,
+    submission_reference: str,
+    device_name: str,
+    tags: list[ConfidentialityTag],
+    attested_by: UUID | None = None,
+) -> CBIRequest:
+    """
+    Generate a CBI request from confidentiality tags.
+
+    Args:
+        organization_id: Organization making the request
+        submission_reference: Submission ID or reference
+        device_name: Name of the medical device
+        tags: List of ConfidentialityTag for CBI items
+        attested_by: User attesting the request (optional)
+
+    Returns:
+        CBIRequest ready for submission.
+    """
+    items = create_cbi_items_from_tags(tags)
+
+    now = datetime.now(UTC)
+    request = CBIRequest(
+        organization_id=organization_id,
+        submission_reference=submission_reference,
+        device_name=device_name,
+        items=items,
+        created_at=now,
+    )
+
+    if attested_by:
+        request.attested_by = attested_by
+        request.attested_at = now
+
+    return request
+
+
+def generate_cbi_request_document(request: CBIRequest) -> str:
+    """
+    Generate a CBI request document as formatted text.
+
+    Args:
+        request: CBIRequest with items
+
+    Returns:
+        Formatted CBI request document text.
+    """
+    lines: list[str] = []
+
+    lines.append("=" * 70)
+    lines.append("CONFIDENTIAL BUSINESS INFORMATION (CBI) REQUEST")
+    lines.append("=" * 70)
+    lines.append("")
+    lines.append(f"Submission Reference: {request.submission_reference}")
+    lines.append(f"Device Name: {request.device_name}")
+    lines.append(
+        f"Date: {request.created_at.strftime('%Y-%m-%d') if request.created_at else 'Not dated'}"
+    )
+    lines.append(f"Citation: {request.citation_text}")
+    lines.append("")
+    lines.append("-" * 70)
+    lines.append("CBI ITEMS")
+    lines.append("-" * 70)
+    lines.append("")
+
+    for idx, item in enumerate(request.items, start=1):
+        lines.append(f"Item {idx}:")
+        lines.append(f"  Type: {item.entity_type}")
+        lines.append(f"  Level: {item.confidentiality_level}")
+        lines.append(f"  Description: {item.description}")
+        lines.append(f"  Justification: {item.justification}")
+        lines.append(f"  Harm if Disclosed: {item.harm_if_disclosed}")
+        if item.page_references:
+            lines.append(f"  Page References: {', '.join(item.page_references)}")
+        if item.summary_for_public_use:
+            lines.append(f"  Public Summary: {item.summary_for_public_use}")
+        lines.append("")
+
+    lines.append("-" * 70)
+    lines.append("ATTESTATION")
+    lines.append("-" * 70)
+    lines.append("")
+    lines.append(request.attestation_text)
+    lines.append("")
+
+    if request.has_attestation:
+        lines.append(f"Attested by: {request.attested_by}")
+        lines.append(
+            f"Date: {request.attested_at.strftime('%Y-%m-%d %H:%M:%S UTC') if request.attested_at else 'N/A'}"
+        )
+    else:
+        lines.append("[ ] I certify the above statement is true and accurate.")
+        lines.append("")
+        lines.append("Signature: _________________________")
+        lines.append("Name: _________________________")
+        lines.append("Title: _________________________")
+        lines.append("Date: _________________________")
+
+    lines.append("")
+    lines.append("=" * 70)
+    lines.append(f"Total CBI Items: {request.total_items}")
+    lines.append(f"Trade Secrets: {request.trade_secret_count}")
+    lines.append("=" * 70)
+
+    return "\n".join(lines)
