@@ -26,6 +26,7 @@ from src.agents.prompts import (
     READINESS_SUMMARY_PROMPT,
     REGULATORY_AGENT_SYSTEM_PROMPT,
     AIProvenance,
+    CitedFinding,
     CoverageGapInterpretation,
     EvidenceReviewResponse,
     HazardAssessmentResponse,
@@ -685,3 +686,153 @@ class TestSystemPromptContent:
         assert "classification" in DEVICE_ANALYSIS_PROMPT.lower()
         assert "gap analysis" in DEVICE_ANALYSIS_PROMPT.lower()
         assert "readiness" in DEVICE_ANALYSIS_PROMPT.lower()
+
+
+# =============================================================================
+# Sprint 5C: Citation Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestCitedFindingModel:
+    """Tests for CitedFinding Pydantic model (Sprint 5C)."""
+
+    def test_cited_finding_with_all_fields(self) -> None:
+        """CitedFinding should accept all citation fields."""
+        finding = CitedFinding(
+            rule_id="GAP-001",
+            severity="critical",
+            description="Test finding",
+            regulation_ref="ISO-14971-2019-7",
+            guidance_ref="GUI-0102",
+            citation_text="[ISO 14971:2019, 7]",
+            remediation="Fix this issue",
+        )
+        assert finding.rule_id == "GAP-001"
+        assert finding.regulation_ref == "ISO-14971-2019-7"
+        assert finding.citation_text == "[ISO 14971:2019, 7]"
+
+    def test_cited_finding_citation_fields_optional(self) -> None:
+        """Citation fields should be optional."""
+        finding = CitedFinding(
+            rule_id="GAP-001",
+            severity="major",
+            description="Test",
+        )
+        assert finding.regulation_ref is None
+        assert finding.guidance_ref is None
+        assert finding.citation_text is None
+
+    def test_cited_finding_partial_citations(self) -> None:
+        """CitedFinding should accept partial citation fields."""
+        finding = CitedFinding(
+            rule_id="GAP-004",
+            severity="critical",
+            description="Missing intended use",
+            regulation_ref="SOR-98-282-S32-2-A",
+            citation_text="[SOR/98-282, s.32(2)(a)]",
+        )
+        assert finding.regulation_ref == "SOR-98-282-S32-2-A"
+        assert finding.guidance_ref is None
+        assert finding.citation_text == "[SOR/98-282, s.32(2)(a)]"
+
+
+@pytest.mark.unit
+class TestResponseSchemasCitationFields:
+    """Tests for citation fields in response schemas (Sprint 5C)."""
+
+    def test_regulatory_analysis_response_has_citation_fields(self) -> None:
+        """RegulatoryAnalysisResponse should have citation fields."""
+        response = RegulatoryAnalysisResponse(
+            task_type="regulatory_agent",
+            summary="Assessment indicates areas requiring attention.",
+            cited_findings=[
+                CitedFinding(
+                    rule_id="GAP-001",
+                    severity="critical",
+                    description="Test",
+                    citation_text="[ISO 14971:2019, 7]",
+                )
+            ],
+            primary_citations=["[SOR/98-282, s.32]"],
+        )
+        assert len(response.cited_findings) == 1
+        assert response.cited_findings[0].citation_text == "[ISO 14971:2019, 7]"
+        assert "[SOR/98-282, s.32]" in response.primary_citations
+
+    def test_hazard_assessment_response_has_citation_fields(self) -> None:
+        """HazardAssessmentResponse should have citation fields."""
+        response = HazardAssessmentResponse(
+            device_version_id="test-123",
+            assessment_text="Assessment indicates areas for review.",
+            cited_findings=[],
+            primary_citations=["[ISO 14971:2019, 6]", "[ISO 14971:2019, 7]"],
+        )
+        assert len(response.primary_citations) == 2
+
+    def test_coverage_gap_interpretation_has_citation_fields(self) -> None:
+        """CoverageGapInterpretation should have citation fields."""
+        response = CoverageGapInterpretation(
+            device_version_id="test-123",
+            interpretation="Findings identified for review.",
+            cited_findings=[],
+            primary_citations=["[SOR/98-282, s.32(4)]"],
+        )
+        assert len(response.primary_citations) == 1
+
+    def test_evidence_review_response_has_citation_fields(self) -> None:
+        """EvidenceReviewResponse should have citation fields."""
+        response = EvidenceReviewResponse(
+            device_version_id="test-123",
+            assessment_text="Evidence assessment based on configured expectations.",
+            cited_findings=[],
+            primary_citations=["[GUI-0102]"],
+        )
+        assert "[GUI-0102]" in response.primary_citations
+
+    def test_readiness_summary_response_has_citation_fields(self) -> None:
+        """ReadinessSummaryResponse should have citation fields."""
+        response = ReadinessSummaryResponse(
+            device_version_id="test-123",
+            overall_score=0.75,
+            score_interpretation="Partial alignment with findings requiring attention.",
+            summary_text="Assessment based on configured expectations.",
+            cited_blockers=[],
+            primary_citations=["[SOR/98-282, s.32(2)(c)]"],
+        )
+        assert len(response.primary_citations) == 1
+
+
+@pytest.mark.unit
+class TestPromptsCitationRequirements:
+    """Tests that prompts include citation requirements (Sprint 5C)."""
+
+    def test_master_prompt_has_citation_rules(self) -> None:
+        """Master prompt must include CITATION REQUIREMENTS section."""
+        assert "CITATION REQUIREMENTS" in REGULATORY_AGENT_SYSTEM_PROMPT
+        assert "SOR/98-282" in REGULATORY_AGENT_SYSTEM_PROMPT
+        assert "fabricate" in REGULATORY_AGENT_SYSTEM_PROMPT.lower()
+
+    def test_hazard_assessment_prompt_has_citation_rules(self) -> None:
+        """Hazard assessment prompt must have citation rules."""
+        assert "CITATION RULES" in HAZARD_ASSESSMENT_PROMPT
+        assert "ISO 14971" in HAZARD_ASSESSMENT_PROMPT
+
+    def test_coverage_gap_prompt_has_citation_rules(self) -> None:
+        """Coverage gap prompt must have citation rules."""
+        assert "CITATION RULES" in COVERAGE_GAP_PROMPT
+        assert "GAP-001" in COVERAGE_GAP_PROMPT
+
+    def test_evidence_review_prompt_has_citation_rules(self) -> None:
+        """Evidence review prompt must have citation rules."""
+        assert "CITATION RULES" in EVIDENCE_REVIEW_PROMPT
+        assert "s.32" in EVIDENCE_REVIEW_PROMPT
+
+    def test_readiness_summary_prompt_has_citation_rules(self) -> None:
+        """Readiness summary prompt must have citation rules."""
+        assert "CITATION RULES" in READINESS_SUMMARY_PROMPT
+
+    def test_device_analysis_prompt_has_citation_rules(self) -> None:
+        """Device analysis prompt must have citation rules."""
+        assert "CITATION RULES" in DEVICE_ANALYSIS_PROMPT
+        assert "Schedule 1" in DEVICE_ANALYSIS_PROMPT
