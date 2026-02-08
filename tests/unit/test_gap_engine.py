@@ -1,7 +1,7 @@
 """
 Unit tests for the Gap Detection Engine.
 
-Sprint 3a + 7C — Tests for GapDetectionEngine, all 16 gap rules,
+Sprint 3a + 8C — Tests for GapDetectionEngine, all 19 gap rules,
 Pydantic models, and regulatory language safety.
 
 Tests use mock dependencies (no DB required).
@@ -206,12 +206,12 @@ class TestGapReportModel:
         report = GapReport(
             device_version_id="test-123",
             evaluated_at="2026-02-07T20:00:00+00:00",
-            rules_executed=16,
+            rules_executed=19,
             total_findings=3,
             critical_count=1,
             major_count=2,
         )
-        assert report.rules_executed == 16
+        assert report.rules_executed == 19
         assert report.total_findings == 3
 
     def test_gap_report_defaults(self):
@@ -247,14 +247,14 @@ class TestGapEngineInitialization:
         )
         assert engine is not None
 
-    def test_engine_has_16_rules(self, gap_engine):
-        """Engine should have exactly 16 rule definitions."""
+    def test_engine_has_19_rules(self, gap_engine):
+        """Engine should have exactly 19 rule definitions."""
         rules = gap_engine.get_rules()
-        assert len(rules) == 16
+        assert len(rules) == 19
 
-    def test_engine_has_16_evaluators(self, gap_engine):
+    def test_engine_has_19_evaluators(self, gap_engine):
         """Engine should have an evaluator for each rule."""
-        assert len(gap_engine._rule_evaluators) == 16
+        assert len(gap_engine._rule_evaluators) == 19
 
     def test_all_rules_have_evaluators(self, gap_engine):
         """Every defined rule should have a matching evaluator."""
@@ -273,7 +273,7 @@ class TestGapEngineInitialization:
         for rule_id in gap_engine.RULE_DEFINITIONS:
             assert rule_id.startswith("GAP-"), f"Rule {rule_id} doesn't follow GAP-NNN pattern"
             num = int(rule_id.split("-")[1])
-            assert 1 <= num <= 16
+            assert 1 <= num <= 19
 
 
 @pytest.mark.unit
@@ -299,7 +299,7 @@ class TestGapEngineEvaluate:
     def test_evaluate_counts_rules_executed(self, gap_engine):
         """Report should count how many rules were executed."""
         report = gap_engine.evaluate(DEVICE_VERSION_ID)
-        assert report.rules_executed == 16
+        assert report.rules_executed == 19
 
     def test_evaluate_empty_device_has_completeness_gaps(self, gap_engine, mock_repository):
         """Empty device should trigger completeness rules (004, 007, 009)."""
@@ -320,7 +320,7 @@ class TestGapEngineEvaluate:
         mock_repository.get_by_device_version.side_effect = Exception("DB error")
         # Should not raise — best-effort pattern
         report = gap_engine.evaluate(DEVICE_VERSION_ID)
-        assert report.rules_executed == 16
+        assert report.rules_executed == 19
 
     def test_evaluate_skips_disabled_rules(self, mock_traceability, mock_repository):
         """Disabled rules should not be executed."""
@@ -379,14 +379,14 @@ class TestGetRules:
     """Tests for rule listing methods."""
 
     def test_get_rules_returns_all(self, gap_engine):
-        """get_rules() should return all 16 rules."""
+        """get_rules() should return all 19 rules."""
         rules = gap_engine.get_rules()
-        assert len(rules) == 16
+        assert len(rules) == 19
 
     def test_get_enabled_rules_default(self, gap_engine):
-        """get_enabled_rules() should return 16 by default (all enabled)."""
+        """get_enabled_rules() should return 19 by default (all enabled)."""
         rules = gap_engine.get_enabled_rules()
-        assert len(rules) == 16
+        assert len(rules) == 19
 
     def test_get_enabled_rules_excludes_disabled(self, mock_traceability, mock_repository):
         """get_enabled_rules() should exclude disabled rules."""
@@ -403,7 +403,7 @@ class TestGetRules:
             enabled=False,
         )
         rules = engine.get_enabled_rules()
-        assert len(rules) == 15
+        assert len(rules) == 18
         assert all(r.id != "GAP-007" for r in rules)
 
 
@@ -1468,6 +1468,247 @@ class TestGAP016TechnologicalDifferencesUnaddressed:
         assert "SOR/98-282" in findings[0].citation_text
 
 
+@pytest.mark.unit
+class TestGAP017UnmetDesignInputs:
+    """Tests for GAP-017: Unmet design inputs.
+
+    Design inputs with no corresponding outputs per ISO 13485:2016 7.3.
+    """
+
+    def test_no_unmet_inputs_no_finding(self, gap_engine, mock_repository):
+        """No unmet design inputs should produce no findings."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        # Mock design control service to return empty list
+        gap_engine._design_control.get_unmet_inputs = lambda dv: []
+
+        findings = gap_engine.evaluate_rule("GAP-017", dvid)
+        assert len(findings) == 0
+
+    def test_unmet_input_produces_finding(self, gap_engine, mock_repository):
+        """Design input without output should produce finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        input_id = uuid4()
+
+        # Mock unmet input with correct attributes per implementation
+        unmet_input = type(
+            "DesignInput",
+            (),
+            {
+                "id": input_id,
+                "title": "Device shall operate at 37°C",
+                "source": "customer",
+                "priority": "high",
+            },
+        )()
+        gap_engine._design_control.get_unmet_inputs = lambda dv: [unmet_input]
+
+        findings = gap_engine.evaluate_rule("GAP-017", dvid)
+        assert len(findings) == 1
+        assert findings[0].severity == "major"
+        assert findings[0].rule_id == "GAP-017"
+        assert findings[0].entity_type == "design_input"
+        assert findings[0].entity_id == str(input_id)
+
+    def test_multiple_unmet_inputs(self, gap_engine, mock_repository):
+        """Multiple unmet inputs should produce multiple findings."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        inputs = [
+            type(
+                "DesignInput",
+                (),
+                {
+                    "id": uuid4(),
+                    "title": f"Requirement {i}",
+                    "source": "regulatory",
+                    "priority": "medium",
+                },
+            )()
+            for i in range(3)
+        ]
+        gap_engine._design_control.get_unmet_inputs = lambda dv: inputs
+
+        findings = gap_engine.evaluate_rule("GAP-017", dvid)
+        assert len(findings) == 3
+
+    def test_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-017 finding should include ISO 13485 citation."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        unmet_input = type(
+            "DesignInput",
+            (),
+            {
+                "id": uuid4(),
+                "title": "Test requirement",
+                "source": "internal",
+                "priority": "low",
+            },
+        )()
+        gap_engine._design_control.get_unmet_inputs = lambda dv: [unmet_input]
+
+        findings = gap_engine.evaluate_rule("GAP-017", dvid)
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "ISO-13485-2016-7.3.4"
+        assert "13485" in findings[0].citation_text
+
+
+@pytest.mark.unit
+class TestGAP018UnverifiedDesignOutputs:
+    """Tests for GAP-018: Unverified design outputs.
+
+    Design outputs with no passing verification per ISO 13485:2016 7.3.6.
+    """
+
+    def test_no_unverified_outputs_no_finding(self, gap_engine, mock_repository):
+        """No unverified design outputs should produce no findings."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        gap_engine._design_control.get_unverified_outputs = lambda dv: []
+
+        findings = gap_engine.evaluate_rule("GAP-018", dvid)
+        assert len(findings) == 0
+
+    def test_unverified_output_produces_finding(self, gap_engine, mock_repository):
+        """Design output without verification should produce finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        output_id = uuid4()
+
+        # Mock with correct attributes per implementation
+        unverified_output = type(
+            "DesignOutput",
+            (),
+            {
+                "id": output_id,
+                "title": "Temperature sensor module",
+                "output_type": "hardware",
+                "status": "pending",
+            },
+        )()
+        gap_engine._design_control.get_unverified_outputs = lambda dv: [unverified_output]
+
+        findings = gap_engine.evaluate_rule("GAP-018", dvid)
+        assert len(findings) == 1
+        assert findings[0].severity == "critical"
+        assert findings[0].rule_id == "GAP-018"
+        assert findings[0].entity_type == "design_output"
+        assert findings[0].entity_id == str(output_id)
+
+    def test_multiple_unverified_outputs(self, gap_engine, mock_repository):
+        """Multiple unverified outputs should produce multiple findings."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        outputs = [
+            type(
+                "DesignOutput",
+                (),
+                {
+                    "id": uuid4(),
+                    "title": f"Output {i}",
+                    "output_type": "hardware",
+                    "status": "pending",
+                },
+            )()
+            for i in range(2)
+        ]
+        gap_engine._design_control.get_unverified_outputs = lambda dv: outputs
+
+        findings = gap_engine.evaluate_rule("GAP-018", dvid)
+        assert len(findings) == 2
+
+    def test_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-018 finding should include ISO 13485 citation."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        unverified_output = type(
+            "DesignOutput",
+            (),
+            {
+                "id": uuid4(),
+                "title": "Test output",
+                "output_type": "software",
+                "status": "draft",
+            },
+        )()
+        gap_engine._design_control.get_unverified_outputs = lambda dv: [unverified_output]
+
+        findings = gap_engine.evaluate_rule("GAP-018", dvid)
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "ISO-13485-2016-7.3.6"
+        assert "13485" in findings[0].citation_text
+
+
+@pytest.mark.unit
+class TestGAP019MissingDesignReview:
+    """Tests for GAP-019: Missing design review.
+
+    Design phases with no formal review record per ISO 13485:2016 7.3.5.
+    """
+
+    def test_no_missing_reviews_no_finding(self, gap_engine, mock_repository):
+        """No phases without review should produce no findings."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        gap_engine._design_control.get_phases_without_review = lambda dv: []
+
+        findings = gap_engine.evaluate_rule("GAP-019", dvid)
+        assert len(findings) == 0
+
+    def test_phase_without_review_produces_finding(self, gap_engine, mock_repository):
+        """Design phase without review should produce finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        gap_engine._design_control.get_phases_without_review = lambda dv: ["concept"]
+
+        findings = gap_engine.evaluate_rule("GAP-019", dvid)
+        assert len(findings) == 1
+        assert findings[0].severity == "major"
+        assert findings[0].rule_id == "GAP-019"
+        # entity_type is device_version per implementation (phase is in details)
+        assert findings[0].entity_type == "device_version"
+        assert findings[0].entity_id == dvid
+        assert "concept" in findings[0].description.lower()
+
+    def test_multiple_phases_without_review(self, gap_engine, mock_repository):
+        """Multiple phases without review should produce multiple findings."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        gap_engine._design_control.get_phases_without_review = lambda dv: [
+            "concept",
+            "prototype",
+            "production",
+        ]
+
+        findings = gap_engine.evaluate_rule("GAP-019", dvid)
+        assert len(findings) == 3
+
+    def test_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-019 finding should include ISO 13485 citation."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        gap_engine._design_control.get_phases_without_review = lambda dv: ["validation"]
+
+        findings = gap_engine.evaluate_rule("GAP-019", dvid)
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "ISO-13485-2016-7.3.5"
+        assert "13485" in findings[0].citation_text
+
+
 # =============================================================================
 # Regulatory Language Safety Tests
 # =============================================================================
@@ -1840,8 +2081,16 @@ class TestRuleVersionsBumped:
     def test_existing_rules_version_2(self, gap_engine):
         """Rules 1-12 should be version 2 after citation addition."""
         for rule_id, rule in gap_engine.RULE_DEFINITIONS.items():
-            if rule_id in ("GAP-013", "GAP-014", "GAP-015", "GAP-016"):
-                # GAP-013-016 are new, start at version 1
+            if rule_id in (
+                "GAP-013",
+                "GAP-014",
+                "GAP-015",
+                "GAP-016",
+                "GAP-017",
+                "GAP-018",
+                "GAP-019",
+            ):
+                # GAP-013-019 are new, start at version 1
                 assert rule.version == 1, f"Rule {rule_id} version should be 1, got {rule.version}"
             else:
                 assert rule.version == 2, f"Rule {rule_id} version should be 2, got {rule.version}"

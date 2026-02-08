@@ -1,8 +1,8 @@
 """
-Gap Detection Engine — Sprint 3a + 5B citations + 7C clinical/predicate rules.
+Gap Detection Engine — Sprint 3a + 5B citations + 7C clinical + 8C design control rules.
 
 Deterministic, rules-based engine that evaluates regulatory readiness.
-16 versioned rules. No AI dependency. Each rule produces explainable
+19 versioned rules. No AI dependency. Each rule produces explainable
 findings with severity, description, remediation, and CITATIONS.
 
 CITATION-FIRST PRINCIPLE (Sprint 5B):
@@ -35,6 +35,7 @@ from src.core.clinical_evidence import (
     get_clinical_evidence_service,
 )
 from src.core.confidentiality import ConfidentialityService, get_confidentiality_service
+from src.core.design_controls import DesignControlService, get_design_control_service
 from src.core.predicate_analysis import (
     PredicateAnalysisService,
     get_predicate_analysis_service,
@@ -321,6 +322,37 @@ class GapDetectionEngine:
             primary_reference="SOR-98-282-S32-4",
             secondary_references=[],
         ),
+        # Design control rules (ISO 13485 7.3)
+        "GAP-017": GapRuleDefinition(
+            id="GAP-017",
+            name="Unmet design inputs",
+            description="Design inputs with no corresponding outputs",
+            severity="major",
+            category="completeness",
+            version=1,
+            primary_reference="ISO-13485-2016-7.3.4",
+            secondary_references=["SOR-98-282-S10"],
+        ),
+        "GAP-018": GapRuleDefinition(
+            id="GAP-018",
+            name="Unverified design outputs",
+            description="Design outputs with no passing verification",
+            severity="critical",
+            category="verification",
+            version=1,
+            primary_reference="ISO-13485-2016-7.3.6",
+            secondary_references=["SOR-98-282-S10"],
+        ),
+        "GAP-019": GapRuleDefinition(
+            id="GAP-019",
+            name="Missing design review",
+            description="Design phase with no formal review record",
+            severity="major",
+            category="completeness",
+            version=1,
+            primary_reference="ISO-13485-2016-7.3.5",
+            secondary_references=["SOR-98-282-S10"],
+        ),
     }
 
     def __init__(
@@ -330,6 +362,7 @@ class GapDetectionEngine:
         confidentiality_service: ConfidentialityService | None = None,
         clinical_evidence_service: ClinicalEvidenceService | None = None,
         predicate_analysis_service: PredicateAnalysisService | None = None,
+        design_control_service: DesignControlService | None = None,
     ) -> None:
         """Initialize the Gap Detection Engine.
 
@@ -344,6 +377,8 @@ class GapDetectionEngine:
                 Defaults to singleton if not provided.
             predicate_analysis_service: Service for predicate device analysis.
                 Defaults to singleton if not provided.
+            design_control_service: Service for design control operations.
+                Defaults to singleton if not provided.
         """
         self.logger = get_logger(self.__class__.__name__)
         self._traceability = traceability_engine or get_traceability_engine()
@@ -351,6 +386,7 @@ class GapDetectionEngine:
         self._confidentiality = confidentiality_service or get_confidentiality_service()
         self._clinical_evidence = clinical_evidence_service or get_clinical_evidence_service()
         self._predicate_analysis = predicate_analysis_service or get_predicate_analysis_service()
+        self._design_control = design_control_service or get_design_control_service()
 
         # Instance-level copy prevents cross-instance rule mutation
         self.RULE_DEFINITIONS: dict[str, GapRuleDefinition] = copy.deepcopy(
@@ -378,6 +414,9 @@ class GapDetectionEngine:
             "GAP-014": self._rule_insufficient_clinical_strength,
             "GAP-015": self._rule_no_predicate_identified,
             "GAP-016": self._rule_technological_differences_unaddressed,
+            "GAP-017": self._rule_unmet_design_inputs,
+            "GAP-018": self._rule_unverified_design_outputs,
+            "GAP-019": self._rule_missing_design_review,
         }
 
     def evaluate(self, device_version_id: str) -> GapReport:
@@ -1367,6 +1406,146 @@ class GapDetectionEngine:
 
         return findings
 
+    def _rule_unmet_design_inputs(self, device_version_id: str) -> list[GapFinding]:
+        """GAP-017: Design inputs with no corresponding outputs.
+
+        Per ISO 13485 7.3.3, design outputs must meet design inputs.
+        Inputs without linked outputs indicate incomplete design development.
+        """
+        findings: list[GapFinding] = []
+        rule = self.RULE_DEFINITIONS["GAP-017"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-017")
+
+        try:
+            from uuid import UUID
+
+            dv_uuid = UUID(str(device_version_id))
+            unmet_inputs = self._design_control.get_unmet_inputs(dv_uuid)
+
+            for inp in unmet_inputs:
+                findings.append(
+                    GapFinding(
+                        rule_id=rule.id,
+                        rule_name=rule.name,
+                        severity=rule.severity,
+                        category=rule.category,
+                        description=(
+                            f"Design input '{inp.title}' has no corresponding "
+                            f"design output. Source: {inp.source}, Priority: {inp.priority}."
+                        ),
+                        entity_type="design_input",
+                        entity_id=str(inp.id),
+                        remediation=(
+                            "Create a design output that addresses this input. "
+                            "Ensure the output satisfies the input's acceptance criteria."
+                        ),
+                        details={
+                            "input_title": inp.title,
+                            "input_source": inp.source,
+                            "input_priority": inp.priority,
+                        },
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
+                    )
+                )
+        except Exception as e:
+            self.logger.warning(f"Could not check unmet design inputs: {e}")
+
+        return findings
+
+    def _rule_unverified_design_outputs(self, device_version_id: str) -> list[GapFinding]:
+        """GAP-018: Design outputs with no passing verification.
+
+        Per ISO 13485 7.3.6, design verification confirms outputs meet inputs.
+        Outputs without verification records indicate incomplete V&V.
+        """
+        findings: list[GapFinding] = []
+        rule = self.RULE_DEFINITIONS["GAP-018"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-018")
+
+        try:
+            from uuid import UUID
+
+            dv_uuid = UUID(str(device_version_id))
+            unverified_outputs = self._design_control.get_unverified_outputs(dv_uuid)
+
+            for out in unverified_outputs:
+                findings.append(
+                    GapFinding(
+                        rule_id=rule.id,
+                        rule_name=rule.name,
+                        severity=rule.severity,
+                        category=rule.category,
+                        description=(
+                            f"Design output '{out.title}' has no passing verification. "
+                            f"Type: {out.output_type}, Status: {out.status}."
+                        ),
+                        entity_type="design_output",
+                        entity_id=str(out.id),
+                        remediation=(
+                            "Perform verification testing per the output's acceptance "
+                            "criteria. Document results in a verification record."
+                        ),
+                        details={
+                            "output_title": out.title,
+                            "output_type": out.output_type,
+                            "output_status": out.status,
+                        },
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
+                    )
+                )
+        except Exception as e:
+            self.logger.warning(f"Could not check unverified design outputs: {e}")
+
+        return findings
+
+    def _rule_missing_design_review(self, device_version_id: str) -> list[GapFinding]:
+        """GAP-019: Design phases with no formal review record.
+
+        Per ISO 13485 7.3.5, design reviews must be conducted at suitable
+        stages. Missing reviews indicate incomplete design documentation.
+        """
+        findings: list[GapFinding] = []
+        rule = self.RULE_DEFINITIONS["GAP-019"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-019")
+
+        try:
+            from uuid import UUID
+
+            dv_uuid = UUID(str(device_version_id))
+            missing_phases = self._design_control.get_phases_without_review(dv_uuid)
+
+            for phase in missing_phases:
+                findings.append(
+                    GapFinding(
+                        rule_id=rule.id,
+                        rule_name=rule.name,
+                        severity=rule.severity,
+                        category=rule.category,
+                        description=(
+                            f"Design phase '{phase}' has no formal design review "
+                            f"record. Reviews should be conducted at suitable stages."
+                        ),
+                        entity_type="device_version",
+                        entity_id=device_version_id,
+                        remediation=(
+                            f"Conduct a design review for the {phase} phase. "
+                            f"Document participants, findings, and decision."
+                        ),
+                        details={"missing_phase": phase},
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
+                    )
+                )
+        except Exception as e:
+            self.logger.warning(f"Could not check missing design reviews: {e}")
+
+        return findings
+
 
 # =============================================================================
 # Singleton Access
@@ -1381,6 +1560,7 @@ def get_gap_engine(
     confidentiality_service: ConfidentialityService | None = None,
     clinical_evidence_service: ClinicalEvidenceService | None = None,
     predicate_analysis_service: PredicateAnalysisService | None = None,
+    design_control_service: DesignControlService | None = None,
 ) -> GapDetectionEngine:
     """Get or create the singleton GapDetectionEngine instance.
 
@@ -1390,6 +1570,7 @@ def get_gap_engine(
         confidentiality_service: Optional override for testing.
         clinical_evidence_service: Optional override for testing.
         predicate_analysis_service: Optional override for testing.
+        design_control_service: Optional override for testing.
 
     Returns:
         GapDetectionEngine singleton instance.
@@ -1402,6 +1583,7 @@ def get_gap_engine(
         or confidentiality_service
         or clinical_evidence_service
         or predicate_analysis_service
+        or design_control_service
     ):
         _gap_engine = GapDetectionEngine(
             traceability_engine=traceability_engine,
@@ -1409,5 +1591,6 @@ def get_gap_engine(
             confidentiality_service=confidentiality_service,
             clinical_evidence_service=clinical_evidence_service,
             predicate_analysis_service=predicate_analysis_service,
+            design_control_service=design_control_service,
         )
     return _gap_engine
