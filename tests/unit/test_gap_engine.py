@@ -1,7 +1,7 @@
 """
 Unit tests for the Gap Detection Engine.
 
-Sprint 3a — Tests for GapDetectionEngine, all 12 gap rules,
+Sprint 3a + 7C — Tests for GapDetectionEngine, all 16 gap rules,
 Pydantic models, and regulatory language safety.
 
 Tests use mock dependencies (no DB required).
@@ -206,12 +206,12 @@ class TestGapReportModel:
         report = GapReport(
             device_version_id="test-123",
             evaluated_at="2026-02-07T20:00:00+00:00",
-            rules_executed=13,
+            rules_executed=16,
             total_findings=3,
             critical_count=1,
             major_count=2,
         )
-        assert report.rules_executed == 13
+        assert report.rules_executed == 16
         assert report.total_findings == 3
 
     def test_gap_report_defaults(self):
@@ -247,14 +247,14 @@ class TestGapEngineInitialization:
         )
         assert engine is not None
 
-    def test_engine_has_12_rules(self, gap_engine):
-        """Engine should have exactly 12 rule definitions."""
+    def test_engine_has_16_rules(self, gap_engine):
+        """Engine should have exactly 16 rule definitions."""
         rules = gap_engine.get_rules()
-        assert len(rules) == 13
+        assert len(rules) == 16
 
-    def test_engine_has_12_evaluators(self, gap_engine):
+    def test_engine_has_16_evaluators(self, gap_engine):
         """Engine should have an evaluator for each rule."""
-        assert len(gap_engine._rule_evaluators) == 13
+        assert len(gap_engine._rule_evaluators) == 16
 
     def test_all_rules_have_evaluators(self, gap_engine):
         """Every defined rule should have a matching evaluator."""
@@ -273,7 +273,7 @@ class TestGapEngineInitialization:
         for rule_id in gap_engine.RULE_DEFINITIONS:
             assert rule_id.startswith("GAP-"), f"Rule {rule_id} doesn't follow GAP-NNN pattern"
             num = int(rule_id.split("-")[1])
-            assert 1 <= num <= 13
+            assert 1 <= num <= 16
 
 
 @pytest.mark.unit
@@ -299,7 +299,7 @@ class TestGapEngineEvaluate:
     def test_evaluate_counts_rules_executed(self, gap_engine):
         """Report should count how many rules were executed."""
         report = gap_engine.evaluate(DEVICE_VERSION_ID)
-        assert report.rules_executed == 13
+        assert report.rules_executed == 16
 
     def test_evaluate_empty_device_has_completeness_gaps(self, gap_engine, mock_repository):
         """Empty device should trigger completeness rules (004, 007, 009)."""
@@ -320,7 +320,7 @@ class TestGapEngineEvaluate:
         mock_repository.get_by_device_version.side_effect = Exception("DB error")
         # Should not raise — best-effort pattern
         report = gap_engine.evaluate(DEVICE_VERSION_ID)
-        assert report.rules_executed == 13
+        assert report.rules_executed == 16
 
     def test_evaluate_skips_disabled_rules(self, mock_traceability, mock_repository):
         """Disabled rules should not be executed."""
@@ -379,14 +379,14 @@ class TestGetRules:
     """Tests for rule listing methods."""
 
     def test_get_rules_returns_all(self, gap_engine):
-        """get_rules() should return all 12 rules."""
+        """get_rules() should return all 16 rules."""
         rules = gap_engine.get_rules()
-        assert len(rules) == 13
+        assert len(rules) == 16
 
     def test_get_enabled_rules_default(self, gap_engine):
-        """get_enabled_rules() should return 12 by default (all enabled)."""
+        """get_enabled_rules() should return 16 by default (all enabled)."""
         rules = gap_engine.get_enabled_rules()
-        assert len(rules) == 13
+        assert len(rules) == 16
 
     def test_get_enabled_rules_excludes_disabled(self, mock_traceability, mock_repository):
         """get_enabled_rules() should exclude disabled rules."""
@@ -403,7 +403,7 @@ class TestGetRules:
             enabled=False,
         )
         rules = engine.get_enabled_rules()
-        assert len(rules) == 12
+        assert len(rules) == 15
         assert all(r.id != "GAP-007" for r in rules)
 
 
@@ -1106,6 +1106,368 @@ class TestGAP013UnclassifiedSensitiveAssets:
         assert "SOR/98-282" in findings[0].citation_text
 
 
+@pytest.mark.unit
+class TestGAP014InsufficientClinicalStrength:
+    """Tests for GAP-014: Insufficient clinical evidence strength.
+
+    This rule checks if clinical evidence strength meets the threshold
+    for the device's class per GUI-0102.
+    """
+
+    def test_no_device_version_no_findings(self, gap_engine, mock_repository):
+        """No device version found should produce no findings."""
+        mock_repository.get_by_id.return_value = None
+        findings = gap_engine.evaluate_rule("GAP-014", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_class_i_no_threshold_check(self, gap_engine, mock_repository):
+        """Class I devices have no clinical evidence threshold."""
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "device_class": "I",
+        }
+        findings = gap_engine.evaluate_rule("GAP-014", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_no_clinical_evidence_no_finding(self, gap_engine, mock_repository):
+        """No clinical evidence should not trigger this rule (GAP-012 catches it)."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "III",
+        }
+        # Mock clinical evidence service to return empty portfolio
+        gap_engine._clinical_evidence.get_portfolio = lambda dvid: type(
+            "Portfolio", (), {"total_studies": 0, "weighted_quality_score": 0.0}
+        )()
+
+        findings = gap_engine.evaluate_rule("GAP-014", dvid)
+        assert len(findings) == 0
+
+    def test_class_iii_below_threshold_produces_finding(self, gap_engine, mock_repository):
+        """Class III with score below 0.6 threshold should produce finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "III",
+        }
+        # Mock clinical evidence service with low score
+        gap_engine._clinical_evidence.get_portfolio = lambda dvid: type(
+            "Portfolio", (), {"total_studies": 3, "weighted_quality_score": 0.40}
+        )()
+
+        findings = gap_engine.evaluate_rule("GAP-014", dvid)
+        assert len(findings) == 1
+        assert findings[0].severity == "critical"
+        assert findings[0].rule_id == "GAP-014"
+        assert findings[0].details["current_score"] == 0.40
+        assert findings[0].details["threshold"] == 0.6
+
+    def test_class_iii_above_threshold_no_finding(self, gap_engine, mock_repository):
+        """Class III with score above 0.6 threshold should produce no finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "III",
+        }
+        # Mock clinical evidence service with adequate score
+        gap_engine._clinical_evidence.get_portfolio = lambda dvid: type(
+            "Portfolio", (), {"total_studies": 5, "weighted_quality_score": 0.75}
+        )()
+
+        findings = gap_engine.evaluate_rule("GAP-014", dvid)
+        assert len(findings) == 0
+
+    def test_class_ii_threshold_check(self, gap_engine, mock_repository):
+        """Class II below 0.4 threshold should produce finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "II",
+        }
+        gap_engine._clinical_evidence.get_portfolio = lambda dvid: type(
+            "Portfolio", (), {"total_studies": 2, "weighted_quality_score": 0.20}
+        )()
+
+        findings = gap_engine.evaluate_rule("GAP-014", dvid)
+        assert len(findings) == 1
+        assert findings[0].details["threshold"] == 0.4
+
+    def test_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-014 finding should include GUI-0102 citation."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "III",
+        }
+        gap_engine._clinical_evidence.get_portfolio = lambda dvid: type(
+            "Portfolio", (), {"total_studies": 1, "weighted_quality_score": 0.25}
+        )()
+
+        findings = gap_engine.evaluate_rule("GAP-014", dvid)
+        assert len(findings) == 1
+        assert findings[0].guidance_ref == "GUI-0102"
+
+
+@pytest.mark.unit
+class TestGAP015NoPredicateIdentified:
+    """Tests for GAP-015: No predicate device identified.
+
+    Class II/III devices should have predicate comparisons for
+    substantial equivalence demonstrations per SOR/98-282 s.32(4).
+    """
+
+    def test_no_device_version_no_findings(self, gap_engine, mock_repository):
+        """No device version found should produce no findings."""
+        mock_repository.get_by_id.return_value = None
+        findings = gap_engine.evaluate_rule("GAP-015", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_class_i_no_predicate_needed(self, gap_engine, mock_repository):
+        """Class I devices don't require predicate comparisons."""
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "device_class": "I",
+        }
+        findings = gap_engine.evaluate_rule("GAP-015", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_class_iv_no_predicate_needed(self, gap_engine, mock_repository):
+        """Class IV devices don't require predicate comparisons."""
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "device_class": "IV",
+        }
+        findings = gap_engine.evaluate_rule("GAP-015", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_class_ii_without_predicate_produces_finding(self, gap_engine, mock_repository):
+        """Class II without predicate should produce finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "II",
+        }
+        # Mock predicate service to return empty list
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: []
+
+        findings = gap_engine.evaluate_rule("GAP-015", dvid)
+        assert len(findings) == 1
+        assert findings[0].severity == "major"
+        assert findings[0].rule_id == "GAP-015"
+        assert findings[0].details["device_class"] == "II"
+
+    def test_class_iii_without_predicate_produces_finding(self, gap_engine, mock_repository):
+        """Class III without predicate should produce finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "III",
+        }
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: []
+
+        findings = gap_engine.evaluate_rule("GAP-015", dvid)
+        assert len(findings) == 1
+        assert findings[0].details["device_class"] == "III"
+
+    def test_class_ii_with_predicate_no_finding(self, gap_engine, mock_repository):
+        """Class II with predicate comparison should produce no finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "II",
+        }
+        # Mock predicate service to return a predicate
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: [
+            type("PredicateDevice", (), {"id": uuid4(), "predicate_name": "Test"})()
+        ]
+
+        findings = gap_engine.evaluate_rule("GAP-015", dvid)
+        assert len(findings) == 0
+
+    def test_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-015 finding should include SOR citation."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        mock_repository.get_by_id.return_value = {
+            "id": dvid,
+            "device_class": "II",
+        }
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: []
+
+        findings = gap_engine.evaluate_rule("GAP-015", dvid)
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "SOR-98-282-S32-4"
+        assert findings[0].guidance_ref == "GUI-0098"
+
+
+@pytest.mark.unit
+class TestGAP016TechnologicalDifferencesUnaddressed:
+    """Tests for GAP-016: Technological differences unaddressed.
+
+    When predicate has technological differences without documented
+    mitigations, this creates a gap in SE demonstration.
+    """
+
+    def test_no_predicates_no_findings(self, gap_engine, mock_repository):
+        """No predicate devices should produce no findings."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: []
+        findings = gap_engine.evaluate_rule("GAP-016", dvid)
+        assert len(findings) == 0
+
+    def test_no_differences_no_finding(self, gap_engine, mock_repository):
+        """Predicate with no technological differences should produce no finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        predicate = type(
+            "PredicateDevice",
+            (),
+            {
+                "id": uuid4(),
+                "predicate_name": "Predicate Device",
+                "technological_differences": [],
+                "technological_mitigations": [],
+                "technological_equivalent": True,
+            },
+        )()
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: [predicate]
+
+        findings = gap_engine.evaluate_rule("GAP-016", dvid)
+        assert len(findings) == 0
+
+    def test_differences_with_mitigations_no_finding(self, gap_engine, mock_repository):
+        """Differences with mitigations should produce no finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        predicate = type(
+            "PredicateDevice",
+            (),
+            {
+                "id": uuid4(),
+                "predicate_name": "Predicate Device",
+                "technological_differences": ["Different material"],
+                "technological_mitigations": ["Biocompatibility testing performed"],
+                "technological_equivalent": True,
+            },
+        )()
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: [predicate]
+
+        findings = gap_engine.evaluate_rule("GAP-016", dvid)
+        assert len(findings) == 0
+
+    def test_differences_without_mitigations_produces_finding(self, gap_engine, mock_repository):
+        """Differences without mitigations should produce critical finding."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        pred_id = uuid4()
+        predicate = type(
+            "PredicateDevice",
+            (),
+            {
+                "id": pred_id,
+                "predicate_name": "Competitor Device X",
+                "technological_differences": [
+                    "Different sensor technology",
+                    "New housing material",
+                ],
+                "technological_mitigations": [],  # No mitigations documented
+                "technological_equivalent": False,
+            },
+        )()
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: [predicate]
+
+        findings = gap_engine.evaluate_rule("GAP-016", dvid)
+        assert len(findings) == 1
+        assert findings[0].severity == "critical"
+        assert findings[0].rule_id == "GAP-016"
+        assert findings[0].entity_type == "predicate_device"
+        assert findings[0].entity_id == str(pred_id)
+        assert "Competitor Device X" in findings[0].description
+        assert len(findings[0].details["differences"]) == 2
+
+    def test_multiple_predicates_mixed(self, gap_engine, mock_repository):
+        """Multiple predicates - only problematic ones produce findings."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        good_predicate = type(
+            "PredicateDevice",
+            (),
+            {
+                "id": uuid4(),
+                "predicate_name": "Good Predicate",
+                "technological_differences": [],
+                "technological_mitigations": [],
+                "technological_equivalent": True,
+            },
+        )()
+        bad_predicate = type(
+            "PredicateDevice",
+            (),
+            {
+                "id": uuid4(),
+                "predicate_name": "Bad Predicate",
+                "technological_differences": ["Major tech difference"],
+                "technological_mitigations": [],
+                "technological_equivalent": False,
+            },
+        )()
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: [
+            good_predicate,
+            bad_predicate,
+        ]
+
+        findings = gap_engine.evaluate_rule("GAP-016", dvid)
+        assert len(findings) == 1
+        assert "Bad Predicate" in findings[0].description
+
+    def test_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-016 finding should include SOR citation."""
+        from uuid import uuid4
+
+        dvid = str(uuid4())
+        predicate = type(
+            "PredicateDevice",
+            (),
+            {
+                "id": uuid4(),
+                "predicate_name": "Predicate",
+                "technological_differences": ["Difference"],
+                "technological_mitigations": [],
+                "technological_equivalent": False,
+            },
+        )()
+        gap_engine._predicate_analysis.get_by_device_version = lambda dvid: [predicate]
+
+        findings = gap_engine.evaluate_rule("GAP-016", dvid)
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "SOR-98-282-S32-4"
+        assert "SOR/98-282" in findings[0].citation_text
+
+
 # =============================================================================
 # Regulatory Language Safety Tests
 # =============================================================================
@@ -1478,8 +1840,8 @@ class TestRuleVersionsBumped:
     def test_existing_rules_version_2(self, gap_engine):
         """Rules 1-12 should be version 2 after citation addition."""
         for rule_id, rule in gap_engine.RULE_DEFINITIONS.items():
-            if rule_id == "GAP-013":
-                # GAP-013 is new in Sprint 6C, starts at version 1
+            if rule_id in ("GAP-013", "GAP-014", "GAP-015", "GAP-016"):
+                # GAP-013-016 are new, start at version 1
                 assert rule.version == 1, f"Rule {rule_id} version should be 1, got {rule.version}"
             else:
                 assert rule.version == 2, f"Rule {rule_id} version should be 2, got {rule.version}"

@@ -1,8 +1,8 @@
 """
-Gap Detection Engine — Sprint 3a + 5B citations.
+Gap Detection Engine — Sprint 3a + 5B citations + 7C clinical/predicate rules.
 
 Deterministic, rules-based engine that evaluates regulatory readiness.
-12 versioned rules. No AI dependency. Each rule produces explainable
+16 versioned rules. No AI dependency. Each rule produces explainable
 findings with severity, description, remediation, and CITATIONS.
 
 CITATION-FIRST PRINCIPLE (Sprint 5B):
@@ -29,7 +29,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.core.clinical_evidence import (
+    CLASS_EVIDENCE_THRESHOLDS,
+    ClinicalEvidenceService,
+    get_clinical_evidence_service,
+)
 from src.core.confidentiality import ConfidentialityService, get_confidentiality_service
+from src.core.predicate_analysis import (
+    PredicateAnalysisService,
+    get_predicate_analysis_service,
+)
 from src.core.regulatory_references import get_reference_registry
 from src.core.traceability import TraceabilityEngine, get_traceability_engine
 from src.persistence.twin_repository import TwinRepository, get_twin_repository
@@ -282,6 +291,36 @@ class GapDetectionEngine:
             primary_reference="SOR-98-282-S43.2",
             secondary_references=[],
         ),
+        "GAP-014": GapRuleDefinition(
+            id="GAP-014",
+            name="Insufficient clinical evidence strength",
+            description="Clinical evidence below threshold for device class",
+            severity="critical",
+            category="evidence_strength",
+            version=1,
+            primary_reference="GUI-0102",
+            secondary_references=["SOR-98-282-S32-4"],
+        ),
+        "GAP-015": GapRuleDefinition(
+            id="GAP-015",
+            name="No predicate device identified",
+            description="Class II/III device with no predicate comparison",
+            severity="major",
+            category="completeness",
+            version=1,
+            primary_reference="SOR-98-282-S32-4",
+            secondary_references=["GUI-0098"],
+        ),
+        "GAP-016": GapRuleDefinition(
+            id="GAP-016",
+            name="Technological differences unaddressed",
+            description="Predicate has differences without supporting data",
+            severity="critical",
+            category="evidence_strength",
+            version=1,
+            primary_reference="SOR-98-282-S32-4",
+            secondary_references=[],
+        ),
     }
 
     def __init__(
@@ -289,6 +328,8 @@ class GapDetectionEngine:
         traceability_engine: TraceabilityEngine | None = None,
         twin_repository: TwinRepository | None = None,
         confidentiality_service: ConfidentialityService | None = None,
+        clinical_evidence_service: ClinicalEvidenceService | None = None,
+        predicate_analysis_service: PredicateAnalysisService | None = None,
     ) -> None:
         """Initialize the Gap Detection Engine.
 
@@ -299,11 +340,17 @@ class GapDetectionEngine:
                 Defaults to singleton if not provided.
             confidentiality_service: Service for IP classification checks.
                 Defaults to singleton if not provided.
+            clinical_evidence_service: Service for clinical evidence scoring.
+                Defaults to singleton if not provided.
+            predicate_analysis_service: Service for predicate device analysis.
+                Defaults to singleton if not provided.
         """
         self.logger = get_logger(self.__class__.__name__)
         self._traceability = traceability_engine or get_traceability_engine()
         self._repository = twin_repository or get_twin_repository()
         self._confidentiality = confidentiality_service or get_confidentiality_service()
+        self._clinical_evidence = clinical_evidence_service or get_clinical_evidence_service()
+        self._predicate_analysis = predicate_analysis_service or get_predicate_analysis_service()
 
         # Instance-level copy prevents cross-instance rule mutation
         self.RULE_DEFINITIONS: dict[str, GapRuleDefinition] = copy.deepcopy(
@@ -328,6 +375,9 @@ class GapDetectionEngine:
             "GAP-011": self._rule_draft_evidence_only,
             "GAP-012": self._rule_no_clinical_evidence,
             "GAP-013": self._rule_unclassified_sensitive_assets,
+            "GAP-014": self._rule_insufficient_clinical_strength,
+            "GAP-015": self._rule_no_predicate_identified,
+            "GAP-016": self._rule_technological_differences_unaddressed,
         }
 
     def evaluate(self, device_version_id: str) -> GapReport:
@@ -1128,6 +1178,195 @@ class GapDetectionEngine:
 
         return findings
 
+    def _rule_insufficient_clinical_strength(self, device_version_id: str) -> list[GapFinding]:
+        """GAP-014: Clinical evidence strength below threshold for device class.
+
+        Uses ClinicalEvidenceService to check if the aggregate evidence score
+        meets the minimum threshold for the device's class per GUI-0102.
+        """
+        findings: list[GapFinding] = []
+        rule = self.RULE_DEFINITIONS["GAP-014"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-014")
+
+        # Get device version to check class
+        device_version = self._repository.get_by_id("device_versions", device_version_id)
+        if not device_version:
+            return findings
+
+        device_class = device_version.get("device_class", "")
+        if not device_class:
+            return findings
+
+        # Get threshold for this class
+        threshold = CLASS_EVIDENCE_THRESHOLDS.get(device_class, 0.0)
+        if threshold == 0.0:
+            return findings  # Class I has no threshold
+
+        # Get clinical evidence portfolio
+        try:
+            from uuid import UUID
+
+            dv_uuid = UUID(str(device_version_id))
+            portfolio = self._clinical_evidence.get_portfolio(dv_uuid)
+
+            if portfolio.total_studies == 0:
+                # No clinical evidence — GAP-012 catches this for III/IV
+                return findings
+
+            if portfolio.weighted_quality_score < threshold:
+                findings.append(
+                    GapFinding(
+                        rule_id=rule.id,
+                        rule_name=rule.name,
+                        severity=rule.severity,
+                        category=rule.category,
+                        description=(
+                            f"Clinical evidence strength ({portfolio.weighted_quality_score:.2f}) "
+                            f"is below the threshold ({threshold:.2f}) for Class "
+                            f"{device_class} devices. Consider adding higher-quality "
+                            f"evidence such as RCTs or prospective cohorts."
+                        ),
+                        entity_type="device_version",
+                        entity_id=device_version_id,
+                        remediation=(
+                            "Add clinical evidence with higher quality scores. "
+                            "RCTs score 1.0, prospective cohorts score 0.85. "
+                            "Consider upgrading case series to cohort studies."
+                        ),
+                        details={
+                            "current_score": portfolio.weighted_quality_score,
+                            "threshold": threshold,
+                            "device_class": device_class,
+                            "evidence_count": portfolio.total_studies,
+                        },
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
+                    )
+                )
+        except Exception as e:
+            self.logger.warning(f"Could not assess clinical evidence: {e}")
+
+        return findings
+
+    def _rule_no_predicate_identified(self, device_version_id: str) -> list[GapFinding]:
+        """GAP-015: Class II/III device with no predicate comparison.
+
+        Per SOR/98-282 s.32(4), manufacturers may demonstrate substantial
+        equivalence to a legally marketed predicate device. This rule flags
+        Class II/III devices that have no predicate analysis.
+        """
+        findings: list[GapFinding] = []
+        rule = self.RULE_DEFINITIONS["GAP-015"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-015")
+
+        # Get device version to check class
+        device_version = self._repository.get_by_id("device_versions", device_version_id)
+        if not device_version:
+            return findings
+
+        device_class = device_version.get("device_class", "")
+        if device_class not in ("II", "III"):
+            return findings  # Only applies to II/III
+
+        # Check if predicate analysis exists
+        try:
+            from uuid import UUID
+
+            dv_uuid = UUID(str(device_version_id))
+            comparisons = self._predicate_analysis.get_by_device_version(dv_uuid)
+
+            if not comparisons:
+                findings.append(
+                    GapFinding(
+                        rule_id=rule.id,
+                        rule_name=rule.name,
+                        severity=rule.severity,
+                        category=rule.category,
+                        description=(
+                            f"Class {device_class} device has no predicate device "
+                            f"comparison. Consider identifying a legally marketed "
+                            f"predicate device to demonstrate substantial equivalence."
+                        ),
+                        entity_type="device_version",
+                        entity_id=device_version_id,
+                        remediation=(
+                            "Identify a legally marketed predicate device with "
+                            "similar intended use and technology. Create a "
+                            "predicate comparison using PredicateAnalysisService."
+                        ),
+                        details={"device_class": device_class},
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
+                    )
+                )
+        except Exception as e:
+            self.logger.warning(f"Could not check predicate comparisons: {e}")
+
+        return findings
+
+    def _rule_technological_differences_unaddressed(
+        self, device_version_id: str
+    ) -> list[GapFinding]:
+        """GAP-016: Predicate has technological differences without supporting data.
+
+        When a predicate comparison identifies technological differences but
+        those differences are not addressed with mitigations or data, this
+        creates a gap in the substantial equivalence demonstration.
+        """
+        findings: list[GapFinding] = []
+        rule = self.RULE_DEFINITIONS["GAP-016"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-016")
+
+        try:
+            from uuid import UUID
+
+            dv_uuid = UUID(str(device_version_id))
+            predicates = self._predicate_analysis.get_by_device_version(dv_uuid)
+
+            for predicate in predicates:
+                # Check if there are unaddressed technological differences
+                differences = predicate.technological_differences
+                mitigations = predicate.technological_mitigations
+
+                # If there are differences but no mitigations, flag it
+                if differences and not mitigations:
+                    predicate_name = predicate.predicate_name
+                    findings.append(
+                        GapFinding(
+                            rule_id=rule.id,
+                            rule_name=rule.name,
+                            severity=rule.severity,
+                            category=rule.category,
+                            description=(
+                                f"Predicate comparison to '{predicate_name}' "
+                                f"identifies {len(differences)} technological difference(s) "
+                                f"without documented mitigations or supporting data."
+                            ),
+                            entity_type="predicate_device",
+                            entity_id=str(predicate.id),
+                            remediation=(
+                                "Document how technological differences are "
+                                "addressed. Provide performance data, bench "
+                                "testing, or clinical evidence showing the "
+                                "differences do not affect safety or effectiveness."
+                            ),
+                            details={
+                                "predicate_name": predicate_name,
+                                "differences": differences,
+                                "tech_equivalent": predicate.technological_equivalent,
+                            },
+                            regulation_ref=reg_ref,
+                            guidance_ref=guid_ref,
+                            citation_text=citation,
+                        )
+                    )
+        except Exception as e:
+            self.logger.warning(f"Could not check technological differences: {e}")
+
+        return findings
+
 
 # =============================================================================
 # Singleton Access
@@ -1140,6 +1379,8 @@ def get_gap_engine(
     traceability_engine: TraceabilityEngine | None = None,
     twin_repository: TwinRepository | None = None,
     confidentiality_service: ConfidentialityService | None = None,
+    clinical_evidence_service: ClinicalEvidenceService | None = None,
+    predicate_analysis_service: PredicateAnalysisService | None = None,
 ) -> GapDetectionEngine:
     """Get or create the singleton GapDetectionEngine instance.
 
@@ -1147,15 +1388,26 @@ def get_gap_engine(
         traceability_engine: Optional override for testing.
         twin_repository: Optional override for testing.
         confidentiality_service: Optional override for testing.
+        clinical_evidence_service: Optional override for testing.
+        predicate_analysis_service: Optional override for testing.
 
     Returns:
         GapDetectionEngine singleton instance.
     """
     global _gap_engine
-    if _gap_engine is None or traceability_engine or twin_repository or confidentiality_service:
+    if (
+        _gap_engine is None
+        or traceability_engine
+        or twin_repository
+        or confidentiality_service
+        or clinical_evidence_service
+        or predicate_analysis_service
+    ):
         _gap_engine = GapDetectionEngine(
             traceability_engine=traceability_engine,
             twin_repository=twin_repository,
             confidentiality_service=confidentiality_service,
+            clinical_evidence_service=clinical_evidence_service,
+            predicate_analysis_service=predicate_analysis_service,
         )
     return _gap_engine
