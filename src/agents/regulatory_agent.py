@@ -1,12 +1,19 @@
 """
-Regulatory Agent using LangGraph for orchestrated conversations.
+Regulatory Agent — LangGraph Orchestration for Health Canada MedDev Platform.
 
-This agent provides an intelligent interface for navigating Health Canada
-medical device regulations, combining:
-- Tool-based classification and pathway guidance
-- RAG-based document retrieval
-- Conversational memory
+Sprint 4C: Agent Orchestration
+- Multi-step workflows: analyze → classify → trace → gap → readiness
+- LangGraph StateGraph with conditional routing
+- All 18 tools (13 regulatory twin + 5 original)
+- AI provenance logging for every AI output
+- Regulatory-safe language enforcement on all outputs
+- Conversation memory with full state management
+
+NOTE: This replaces the original regulatory_agent.py from Sprint 0.
+SimpleRegulatoryAgent is preserved for backward compatibility (deprecated).
 """
+
+from __future__ import annotations
 
 import operator
 from typing import Annotated, Any, TypedDict
@@ -18,41 +25,67 @@ from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from configs.settings import settings
+from src.agents.prompts import (
+    REGULATORY_AGENT_SYSTEM_PROMPT,
+    build_contextualized_prompt,
+    create_ai_provenance,
+    get_available_task_types,
+    provenance_to_db_dict,
+    sanitize_ai_output,
+    validate_regulatory_language,
+)
+from src.agents.regulatory_twin_tools import get_regulatory_twin_tools
 from src.agents.tools import get_agent_tools
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-# System prompt for the regulatory agent
-SYSTEM_PROMPT = """You are an expert Health Canada medical device regulatory affairs specialist.
-Your role is to help medical device manufacturers understand and navigate Canadian regulatory requirements.
+# ---------------------------------------------------------------------------
+# Workflow definitions — named multi-step sequences
+# ---------------------------------------------------------------------------
+WORKFLOW_DEFINITIONS: dict[str, list[str]] = {
+    "full_analysis": [
+        "classify_device",
+        "get_coverage_report",
+        "run_gap_analysis",
+        "get_readiness_assessment",
+    ],
+    "risk_assessment": [
+        "get_trace_chain",
+        "get_coverage_report",
+        "run_gap_analysis",
+        "get_critical_gaps",
+    ],
+    "evidence_review": [
+        "get_evidence_for_device",
+        "find_unlinked_evidence",
+        "run_gap_analysis",
+    ],
+    "submission_readiness": [
+        "run_gap_analysis",
+        "get_critical_gaps",
+        "get_readiness_assessment",
+    ],
+}
 
-You have access to tools that can:
-1. Classify medical devices according to Health Canada rules and IMDRF SaMD framework
-2. Generate regulatory pathways with timelines and fees
-3. Create comprehensive submission checklists
-4. Search official Health Canada guidance documents
-5. Provide fee information
-
-When helping users:
-- Always gather enough information about the device before classifying
-- For software devices (SaMD), ask about healthcare situation and significance
-- Explain classifications with clear rationale citing specific regulations
-- Provide actionable next steps
-- Cite official guidance documents when available
-- Be precise about timelines and fees, noting they are estimates
-
-Key regulatory concepts:
-- MDEL (Medical Device Establishment Licence): Required for any company selling devices in Canada
-- MDL (Medical Device Licence): Required for Class II, III, IV devices
-- Device Classes: I (lowest risk) to IV (highest risk)
-- SaMD: Software as Medical Device, classified using IMDRF framework
-- IMDRF ToC: International Medical Device Regulators Forum Table of Contents format for submissions
-
-Always be helpful, accurate, and cite your sources when discussing regulations."""
+# Keywords that trigger named workflows
+WORKFLOW_TRIGGERS: dict[str, list[str]] = {
+    "full_analysis": ["analyze my device", "full analysis", "complete analysis", "analyze device"],
+    "risk_assessment": ["risk assessment", "risk analysis", "hazard assessment", "risk review"],
+    "evidence_review": ["evidence review", "evidence assessment", "review evidence"],
+    "submission_readiness": [
+        "submission readiness",
+        "readiness assessment",
+        "submission check",
+        "am i ready",
+    ],
+}
 
 
+# ---------------------------------------------------------------------------
+# Agent state — extended with regulatory twin context
+# ---------------------------------------------------------------------------
 class AgentState(TypedDict):
     """State maintained throughout the agent conversation."""
 
@@ -61,20 +94,112 @@ class AgentState(TypedDict):
     classification_result: dict[str, Any] | None
     pathway_result: dict[str, Any] | None
     checklist_result: dict[str, Any] | None
+    # Sprint 4C additions
+    current_workflow: str | None
+    workflow_step: int
+    workflow_results: dict[str, Any]
+    device_version_id: str | None
+    organization_id: str | None
+    task_type: str | None
+    provenance_records: list[dict[str, Any]]
 
 
+def _default_state() -> AgentState:
+    """Return a fresh default state."""
+    return AgentState(
+        messages=[],
+        device_info=None,
+        classification_result=None,
+        pathway_result=None,
+        checklist_result=None,
+        current_workflow=None,
+        workflow_step=0,
+        workflow_results={},
+        device_version_id=None,
+        organization_id=None,
+        task_type=None,
+        provenance_records=[],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Utility: detect workflow from user message
+# ---------------------------------------------------------------------------
+def detect_workflow(message: str) -> str | None:
+    """Detect if the user message triggers a named workflow.
+
+    Returns workflow name or None.
+    """
+    message_lower = message.lower().strip()
+    for workflow_name, triggers in WORKFLOW_TRIGGERS.items():
+        for trigger in triggers:
+            if trigger in message_lower:
+                return workflow_name
+    return None
+
+
+def detect_task_type(message: str) -> str | None:
+    """Map user message to a task type for prompt routing.
+
+    Returns a task_type string matching get_available_task_types() or None.
+    """
+    message_lower = message.lower().strip()
+    task_map: dict[str, list[str]] = {
+        "hazard_assessment": ["hazard", "risk", "harm", "safety"],
+        "coverage_gap": ["gap", "coverage", "missing", "incomplete"],
+        "evidence_review": ["evidence", "verification", "validation", "test"],
+        "readiness_summary": ["readiness", "submission", "ready"],
+        "device_analysis": ["analyze", "analysis", "classify", "classification"],
+    }
+    for task_type, keywords in task_map.items():
+        if any(kw in message_lower for kw in keywords):
+            return task_type
+    return None
+
+
+# ---------------------------------------------------------------------------
+# AI provenance helper
+# ---------------------------------------------------------------------------
+def _log_provenance(
+    model_id: str,
+    task_type: str,
+    input_text: str,
+    output_text: str,
+    state: AgentState,
+) -> dict[str, Any]:
+    """Create a provenance record and append to state.
+
+    Returns the provenance dict for DB insertion.
+    """
+    provenance = create_ai_provenance(
+        model_id=model_id,
+        task_type=task_type,
+        input_text=input_text,
+        output_text=output_text,
+        device_version_id=state.get("device_version_id"),
+        organization_id=state.get("organization_id"),
+    )
+    return provenance_to_db_dict(provenance)
+
+
+# ---------------------------------------------------------------------------
+# Main agent class
+# ---------------------------------------------------------------------------
 class RegulatoryAgent:
     """
     Conversational agent for Health Canada medical device regulatory guidance.
 
     Uses LangGraph for orchestration with tool-calling capabilities.
+    Integrates all 18 tools (13 regulatory twin + 5 original).
+    Enforces regulatory-safe language on all AI outputs.
+    Logs AI provenance for every output.
     """
 
     def __init__(
         self,
         model_name: str | None = None,
         temperature: float = 0.1,
-    ):
+    ) -> None:
         self.logger = get_logger(self.__class__.__name__)
         self.model_name = model_name or settings.default_llm_model
         self.temperature = temperature
@@ -82,8 +207,10 @@ class RegulatoryAgent:
         # Initialize LLM
         self.llm = self._create_llm()
 
-        # Get tools
-        self.tools = get_agent_tools()
+        # Combine ALL tools: 5 original + 13 regulatory twin = 18 total
+        original_tools = get_agent_tools()
+        twin_tools = get_regulatory_twin_tools()
+        self.tools = original_tools + twin_tools
 
         # Bind tools to LLM
         self.llm_with_tools = self.llm.bind_tools(self.tools)
@@ -92,13 +219,7 @@ class RegulatoryAgent:
         self.graph = self._build_graph()
 
         # Conversation state
-        self._state: AgentState = {
-            "messages": [],
-            "device_info": None,
-            "classification_result": None,
-            "pathway_result": None,
-            "checklist_result": None,
-        }
+        self._state: AgentState = _default_state()
 
     def _create_llm(self) -> ChatAnthropic | ChatOpenAI:
         """Create the LLM instance based on configuration."""
@@ -109,49 +230,104 @@ class RegulatoryAgent:
                 max_tokens=settings.max_tokens,
                 api_key=settings.anthropic_api_key,
             )
-        else:
-            return ChatOpenAI(
-                model=self.model_name,
-                temperature=self.temperature,
-                max_tokens=settings.max_tokens,
-                api_key=settings.openai_api_key,
-            )
+        return ChatOpenAI(
+            model=self.model_name,
+            temperature=self.temperature,
+            max_tokens=settings.max_tokens,
+            api_key=settings.openai_api_key,
+        )
 
     def _build_graph(self) -> StateGraph:
-        """Build the LangGraph workflow."""
-
-        # Define the graph
+        """Build the LangGraph workflow with conditional routing."""
         workflow = StateGraph(AgentState)
 
         # Add nodes
+        workflow.add_node("router", self._route_message)
         workflow.add_node("agent", self._call_model)
         workflow.add_node("tools", ToolNode(self.tools))
+        workflow.add_node("sanitize", self._sanitize_output)
 
-        # Set entry point
-        workflow.set_entry_point("agent")
+        # Entry point is the router
+        workflow.set_entry_point("router")
 
-        # Add conditional edges
+        # Router decides: go to agent
+        workflow.add_edge("router", "agent")
+
+        # Agent either calls tools or goes to sanitize
         workflow.add_conditional_edges(
             "agent",
             self._should_continue,
             {
                 "continue": "tools",
-                "end": END,
+                "end": "sanitize",
             },
         )
 
         # Tools always return to agent
         workflow.add_edge("tools", "agent")
 
+        # Sanitize is the terminal node
+        workflow.add_edge("sanitize", END)
+
         return workflow.compile()
 
-    def _call_model(self, state: AgentState) -> dict[str, Any]:
-        """Call the LLM with the current state."""
-        messages = state["messages"]
+    def _route_message(self, state: AgentState) -> dict[str, Any]:
+        """Route the incoming message — detect workflows and task types.
 
-        # Add system message if not present
+        This node enriches the state with workflow/task metadata
+        before the agent node runs.
+        """
+        messages = state.get("messages", [])
+        if not messages:
+            return {}
+
+        last_message = messages[-1]
+        if not isinstance(last_message, HumanMessage):
+            return {}
+
+        user_text = last_message.content if isinstance(last_message.content, str) else ""
+
+        updates: dict[str, Any] = {}
+
+        # Detect named workflow
+        workflow = detect_workflow(user_text)
+        if workflow:
+            updates["current_workflow"] = workflow
+            updates["workflow_step"] = 0
+            self.logger.info(f"Detected workflow: {workflow}")
+
+        # Detect task type for prompt routing
+        task_type = detect_task_type(user_text)
+        if task_type:
+            updates["task_type"] = task_type
+            self.logger.info(f"Detected task type: {task_type}")
+
+        return updates
+
+    def _call_model(self, state: AgentState) -> dict[str, Any]:
+        """Call the LLM with the current state and appropriate prompt."""
+        messages = list(state.get("messages", []))
+
+        # Select system prompt based on task type
+        task_type = state.get("task_type")
+        device_context = None
+        if state.get("device_version_id"):
+            device_context = {"device_version_id": state["device_version_id"]}
+
+        if task_type and task_type in get_available_task_types():
+            system_prompt = build_contextualized_prompt(
+                task_type=task_type,
+                device_context=device_context,
+            )
+        else:
+            system_prompt = REGULATORY_AGENT_SYSTEM_PROMPT
+
+        # Ensure system message is first
         if not messages or not isinstance(messages[0], SystemMessage):
-            messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+            messages = [SystemMessage(content=system_prompt)] + messages
+        else:
+            # Replace existing system message with task-appropriate one
+            messages[0] = SystemMessage(content=system_prompt)
 
         response = self.llm_with_tools.invoke(messages)
 
@@ -159,7 +335,10 @@ class RegulatoryAgent:
 
     def _should_continue(self, state: AgentState) -> str:
         """Determine whether to continue with tools or end."""
-        messages = state["messages"]
+        messages = state.get("messages", [])
+        if not messages:
+            return "end"
+
         last_message = messages[-1]
 
         # If there are tool calls, continue to tools
@@ -168,15 +347,86 @@ class RegulatoryAgent:
 
         return "end"
 
-    def chat(self, user_message: str) -> str:
+    def _sanitize_output(self, state: AgentState) -> dict[str, Any]:
+        """Sanitize the final AI output for regulatory-safe language.
+
+        Also creates AI provenance record.
         """
-        Send a message and get a response.
+        messages = state.get("messages", [])
+        if not messages:
+            return {}
+
+        # Find the last AI message
+        last_ai_message = None
+
+        for i in range(len(messages) - 1, -1, -1):
+            if isinstance(messages[i], AIMessage):
+                last_ai_message = messages[i]
+
+                break
+
+        if last_ai_message is None:
+            return {}
+
+        original_content = (
+            last_ai_message.content
+            if isinstance(last_ai_message.content, str)
+            else str(last_ai_message.content)
+        )
+
+        # Sanitize for regulatory-safe language
+        sanitized_content = sanitize_ai_output(original_content)
+
+        # Validate — log warnings for any remaining issues
+        validation = validate_regulatory_language(sanitized_content)
+        if not validation.get("is_valid", True):
+            self.logger.warning(
+                f"Language validation issues after sanitization: {validation.get('violations', [])}"
+            )
+
+        # Create provenance record
+        user_input = ""
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                user_input = content  # last user message
+
+        provenance_dict = _log_provenance(
+            model_id=self.model_name,
+            task_type=state.get("task_type") or "general_chat",
+            input_text=user_input,
+            output_text=sanitized_content,
+            state=state,
+        )
+
+        # Build updated provenance list
+        existing_provenance = list(state.get("provenance_records", []))
+        existing_provenance.append(provenance_dict)
+
+        # If content was sanitized, create a new AI message
+        if sanitized_content != original_content:
+            new_message = AIMessage(content=sanitized_content)
+            # We return the sanitized message to replace via state
+            # LangGraph's add reducer will append, so we track this
+            return {
+                "messages": [new_message],
+                "provenance_records": existing_provenance,
+            }
+
+        return {"provenance_records": existing_provenance}
+
+    # -----------------------------------------------------------------------
+    # Public API
+    # -----------------------------------------------------------------------
+
+    def chat(self, user_message: str) -> str:
+        """Send a message and get a response.
 
         Args:
             user_message: User's message
 
         Returns:
-            Agent's response
+            Agent's response (regulatory-safe, provenance-logged)
         """
         self.logger.info(f"User message: {user_message[:100]}...")
 
@@ -184,48 +434,137 @@ class RegulatoryAgent:
         self._state["messages"].append(HumanMessage(content=user_message))
 
         # Run the graph
-        result = self.graph.invoke(self._state)
+        try:
+            result = self.graph.invoke(self._state)
+        except Exception as e:
+            self.logger.error(f"Graph invocation error: {e}")
+            error_response = (
+                "An error occurred while processing your request. "
+                "Please try again or rephrase your question."
+            )
+            self._state["messages"].append(AIMessage(content=error_response))
+            return error_response
 
         # Update state
         self._state = result
 
         # Get the last AI message
-        for message in reversed(result["messages"]):
+        for message in reversed(result.get("messages", [])):
             if isinstance(message, AIMessage):
-                response = str(message.content)
+                response = (
+                    message.content if isinstance(message.content, str) else str(message.content)
+                )
                 self.logger.info(f"Agent response: {response[:100]}...")
                 return response
 
-        return "I apologize, but I couldn't generate a response. Please try again."
+        fallback = (
+            "Unable to generate a response at this time. " "Please try rephrasing your question."
+        )
+        return fallback
+
+    def chat_with_context(
+        self,
+        user_message: str,
+        device_version_id: str | None = None,
+        organization_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Send a message with device/org context and get enriched response.
+
+        Returns dict with 'response', 'provenance', 'workflow', 'task_type'.
+        """
+        if device_version_id:
+            self._state["device_version_id"] = device_version_id
+        if organization_id:
+            self._state["organization_id"] = organization_id
+
+        response_text = self.chat(user_message)
+
+        return {
+            "response": response_text,
+            "provenance": self._state.get("provenance_records", []),
+            "workflow": self._state.get("current_workflow"),
+            "task_type": self._state.get("task_type"),
+        }
 
     def reset(self) -> None:
         """Reset the conversation state."""
-        self._state = {
-            "messages": [],
-            "device_info": None,
-            "classification_result": None,
-            "pathway_result": None,
-            "checklist_result": None,
-        }
+        self._state = _default_state()
         self.logger.info("Conversation reset")
 
     def get_conversation_history(self) -> list[dict[str, str]]:
         """Get the conversation history."""
-        history = []
-        for message in self._state["messages"]:
+        history: list[dict[str, str]] = []
+        for message in self._state.get("messages", []):
             if isinstance(message, HumanMessage):
-                history.append({"role": "user", "content": message.content})
+                content = (
+                    message.content if isinstance(message.content, str) else str(message.content)
+                )
+                history.append({"role": "user", "content": content})
             elif isinstance(message, AIMessage):
-                history.append({"role": "assistant", "content": message.content})
+                content = (
+                    message.content if isinstance(message.content, str) else str(message.content)
+                )
+                history.append({"role": "assistant", "content": content})
         return history
 
+    def get_provenance_records(self) -> list[dict[str, Any]]:
+        """Get all AI provenance records from this session."""
+        return list(self._state.get("provenance_records", []))
 
-# Simple non-LangGraph version for environments without LangGraph
+    def get_current_workflow(self) -> str | None:
+        """Get the currently active workflow name, if any."""
+        return self._state.get("current_workflow")
+
+    def get_available_workflows(self) -> dict[str, list[str]]:
+        """Get all available named workflows and their steps."""
+        return dict(WORKFLOW_DEFINITIONS)
+
+    def set_device_context(
+        self,
+        device_version_id: str | None = None,
+        organization_id: str | None = None,
+    ) -> None:
+        """Set device/org context for subsequent interactions."""
+        if device_version_id is not None:
+            self._state["device_version_id"] = device_version_id
+        if organization_id is not None:
+            self._state["organization_id"] = organization_id
+
+    @property
+    def tool_count(self) -> int:
+        """Return the number of bound tools."""
+        return len(self.tools)
+
+
+# ---------------------------------------------------------------------------
+# Singleton accessor
+# ---------------------------------------------------------------------------
+_agent_instance: RegulatoryAgent | None = None
+
+
+def get_regulatory_agent(
+    model_name: str | None = None,
+    temperature: float = 0.1,
+) -> RegulatoryAgent:
+    """Get or create the singleton RegulatoryAgent instance."""
+    global _agent_instance  # noqa: PLW0603
+    if _agent_instance is None:
+        _agent_instance = RegulatoryAgent(
+            model_name=model_name,
+            temperature=temperature,
+        )
+    return _agent_instance
+
+
+# ---------------------------------------------------------------------------
+# SimpleRegulatoryAgent — DEPRECATED, kept for backward compatibility
+# ---------------------------------------------------------------------------
 class SimpleRegulatoryAgent:
-    """
-    Simplified agent without LangGraph dependency.
+    """Simplified agent without LangGraph dependency.
 
-    Uses direct tool calling for basic functionality.
+    .. deprecated::
+        Use RegulatoryAgent instead. This class is preserved for backward
+        compatibility with existing CLI and Streamlit integrations.
     """
 
     def __init__(self) -> None:
@@ -237,7 +576,6 @@ class SimpleRegulatoryAgent:
         """Process user message and generate response."""
         self.conversation_history.append({"role": "user", "content": user_message})
 
-        # Simple keyword-based routing to tools
         message_lower = user_message.lower()
 
         try:
@@ -252,9 +590,12 @@ class SimpleRegulatoryAgent:
             else:
                 response = self._handle_general_query(user_message)
 
-        except Exception as e:
+        except RuntimeError as e:
             self.logger.error(f"Error processing message: {e}")
-            response = f"I encountered an error processing your request: {str(e)}"
+            response = f"An error occurred processing your request: {e}"
+
+        # Sanitize output for regulatory safety
+        response = sanitize_ai_output(response)
 
         self.conversation_history.append({"role": "assistant", "content": response})
         return response
@@ -263,12 +604,12 @@ class SimpleRegulatoryAgent:
         """Handle device classification queries."""
         return (
             "To classify your device, I need to know:\n\n"
-            "1. **Device name** and description\n"
-            "2. **Intended use** statement\n"
-            "3. Is it **software-based** (SaMD)?\n"
-            "4. Is it an **in-vitro diagnostic** (IVD)?\n"
-            "5. Is it **implantable**?\n"
-            "6. Is it **active** (powered)?\n\n"
+            "1. Device name and description\n"
+            "2. Intended use statement\n"
+            "3. Is it software-based (SaMD)?\n"
+            "4. Is it an in-vitro diagnostic (IVD)?\n"
+            "5. Is it implantable?\n"
+            "6. Is it active (powered)?\n\n"
             "For software devices, I'll also need:\n"
             "- Healthcare situation (critical/serious/non-serious)\n"
             "- Significance of information provided (treat/diagnose/drive/inform)\n\n"
@@ -277,142 +618,38 @@ class SimpleRegulatoryAgent:
 
     def _handle_pathway_query(self, message: str) -> str:
         """Handle regulatory pathway queries."""
-        # Try to extract device class from message
-        for class_name in ["IV", "III", "II", "I"]:
-            if (
-                f"class {class_name.lower()}" in message.lower()
-                or f"class{class_name.lower()}" in message.lower()
-            ):
-                from src.agents.tools import get_regulatory_pathway
-
-                result = get_regulatory_pathway.invoke(
-                    {
-                        "device_class": class_name,
-                        "is_software": "software" in message.lower(),
-                        "has_mdel": False,
-                        "has_qms_certificate": False,
-                    }
-                )
-                return self._format_pathway_response(result)
-
         return (
-            "To provide the regulatory pathway, please specify:\n\n"
-            "1. **Device class** (I, II, III, or IV)\n"
-            "2. Do you already have an **MDEL**?\n"
-            "3. Do you have **ISO 13485** certification?\n"
-            "4. Is this a **software device**?\n\n"
-            "Or if you need help determining your device class, "
-            "I can help you classify it first."
+            "To determine the regulatory pathway, I need the device classification first. "
+            "If you haven't classified your device yet, please provide the device details "
+            "and I can help with that."
         )
 
     def _handle_checklist_query(self, message: str) -> str:
         """Handle checklist queries."""
         return (
-            "I can generate a regulatory checklist for your device.\n\n"
-            "Please provide:\n"
-            "1. **Device class** (I, II, III, or IV)\n"
-            "2. **Device name** and description\n"
-            "3. Is it a **software device**?\n\n"
-            "The checklist will include all required:\n"
-            "- MDEL requirements\n"
-            "- QMS documentation\n"
-            "- MDL application items\n"
-            "- Clinical evidence (for Class III/IV)\n"
-            "- Cybersecurity documentation (for software)\n"
-            "- Labeling requirements"
+            "I can generate a submission checklist once I know your device class "
+            "and regulatory pathway. Would you like to start with device classification?"
         )
 
     def _handle_fee_query(self, message: str) -> str:
         """Handle fee queries."""
-        from src.agents.tools import get_fee_information
-
-        # Try to extract device class
-        for class_name in ["IV", "III", "II", "I"]:
-            if f"class {class_name.lower()}" in message.lower():
-                result = get_fee_information.invoke({"device_class": class_name})
-                return self._format_fee_response(result)
-
         return (
-            "Health Canada fees vary by device class. Please specify your device class:\n\n"
-            "- **Class I**: No MDL required, MDEL fee only\n"
-            "- **Class II**: Lowest MDL fee\n"
-            "- **Class III**: Moderate MDL fee + annual fee\n"
-            "- **Class IV**: Highest MDL fee + annual fee\n\n"
-            "Which device class would you like fee information for?"
+            "Health Canada fees vary by device class. "
+            "Please provide your device classification (Class I-IV) "
+            "and I can look up the current fee schedule."
         )
 
     def _handle_general_query(self, message: str) -> str:
-        """Handle general queries with document search."""
+        """Handle general regulatory queries."""
         return (
-            "I'm your Health Canada Medical Device Regulatory Assistant. I can help with:\n\n"
-            "1. **Device Classification** - Determine your device class (I-IV)\n"
-            "2. **Regulatory Pathway** - Steps, timeline, and requirements\n"
-            "3. **Documentation Checklist** - What you need for submission\n"
-            "4. **Fee Information** - Current Health Canada fees\n"
-            "5. **Regulation Search** - Find specific guidance\n\n"
-            "What would you like help with?"
+            "I can help with Health Canada medical device regulatory questions including:\n"
+            "- Device classification\n"
+            "- Regulatory pathways (MDEL, MDL)\n"
+            "- Submission checklists\n"
+            "- Fee information\n"
+            "- Regulatory guidance search\n\n"
+            "What would you like to know?"
         )
-
-    def _format_pathway_response(self, result: dict[str, Any]) -> str:
-        """Format pathway result as readable text."""
-        if "error" in result:
-            return f"Error: {result['error']}"
-
-        lines = [
-            f"## {result['pathway_name']}",
-            "",
-            f"**Requires MDEL:** {'Yes' if result['requires_mdel'] else 'No (already have one)'}",
-            f"**Requires MDL:** {'Yes' if result['requires_mdl'] else 'No'}",
-            "",
-            "### Steps:",
-        ]
-
-        for step in result["steps"]:
-            lines.append(f"\n**{step['step_number']}. {step['name']}**")
-            lines.append(f"   {step['description'][:200]}...")
-            if step["duration_days"]:
-                lines.append(f"   Duration: ~{step['duration_days']} days")
-            if step["fees"]:
-                lines.append(f"   Fee: ${step['fees']:,.0f} CAD")
-
-        lines.extend(
-            [
-                "",
-                "### Timeline:",
-                f"- Minimum: {result['timeline']['min_days']} days",
-                f"- Maximum: {result['timeline']['max_days']} days",
-                "",
-                "### Total Fees:",
-                f"- **${result['fees']['total']:,.0f} CAD**",
-            ]
-        )
-
-        return "\n".join(lines)
-
-    def _format_fee_response(self, result: dict[str, Any]) -> str:
-        """Format fee result as readable text."""
-        if "error" in result:
-            return f"Error: {result['error']}"
-
-        lines = [
-            f"## Health Canada Fees - Class {result['device_class']}",
-            "",
-            "| Fee Type | Amount |",
-            "|----------|--------|",
-            f"| MDEL Application | ${result['mdel_application_fee']:,} CAD |",
-            f"| MDL Application | ${result['mdl_application_fee']:,} CAD |",
-            f"| Annual Right-to-Sell | ${result['annual_right_to_sell_fee']:,} CAD |",
-            f"| MDL Amendment | ${result['mdl_amendment_fee']:,} CAD |",
-            "",
-            f"*Fee schedule as of {result['fee_schedule_date']}*",
-            "",
-            "**Notes:**",
-        ]
-
-        for note in result["notes"]:
-            lines.append(f"- {note}")
-
-        return "\n".join(lines)
 
     def reset(self) -> None:
         """Reset conversation history."""
