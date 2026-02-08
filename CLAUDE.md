@@ -22,17 +22,17 @@ This system is being built as:
 
 ## 👉 Regulatory Execution Infrastructure
 
-NOT a chatbot.  
-NOT a template generator.  
+NOT a chatbot.
+NOT a template generator.
 NOT an AI gimmick.
 
 Optimize for:
 
-- auditability  
-- traceability  
-- explainability  
-- regulatory defensibility  
-- security  
+- auditability
+- traceability
+- explainability
+- regulatory defensibility
+- security
 
 Over speed.
 
@@ -48,10 +48,10 @@ Over novelty.
 
 Before modifying code:
 
-- Understand dependencies  
-- Evaluate blast radius  
-- Prefer additive changes  
-- Use feature flags when appropriate  
+- Understand dependencies
+- Evaluate blast radius
+- Prefer additive changes
+- Use feature flags when appropriate
 
 Avoid sweeping refactors.
 
@@ -91,10 +91,10 @@ Protect it.
 
 Do NOT invent:
 
-- requirements  
-- standards  
-- pathways  
-- citations  
+- requirements
+- standards
+- pathways
+- citations
 
 If unsure:
 
@@ -110,12 +110,12 @@ No AI-generated regulatory artifact is final without human approval.
 
 Always store:
 
-- provenance  
-- inputs  
-- outputs  
-- model  
-- timestamp  
-- reviewer  
+- provenance
+- inputs
+- outputs
+- model
+- timestamp
+- reviewer
 
 ---
 
@@ -148,10 +148,10 @@ Assume enterprise customers.
 
 Enforce:
 
-- tenant isolation  
-- row-level security  
-- least-privilege access  
-- signed URLs  
+- tenant isolation
+- row-level security
+- least-privilege access
+- signed URLs
 
 Never expose sensitive artifacts publicly.
 
@@ -161,12 +161,12 @@ Never expose sensitive artifacts publicly.
 
 When planning work, bias toward:
 
-1️⃣ Regulatory Twin  
-2️⃣ Traceability Engine  
-3️⃣ Evidence Gap Detection  
-4️⃣ Readiness Dashboard  
-5️⃣ Document Orchestration  
-6️⃣ Deficiency Workflows  
+1️⃣ Regulatory Twin
+2️⃣ Traceability Engine
+3️⃣ Evidence Gap Detection
+4️⃣ Readiness Dashboard
+5️⃣ Document Orchestration
+6️⃣ Deficiency Workflows
 
 Avoid premature complexity.
 
@@ -178,12 +178,12 @@ Earn scale.
 
 Never output:
 
-❌ "You are compliant."  
-❌ "This will pass FDA."  
+❌ "You are compliant."
+❌ "This will pass FDA."
 
 Always prefer:
 
-✅ "Potential gaps detected relative to regulatory expectations."  
+✅ "Potential gaps detected relative to regulatory expectations."
 ✅ "Draft for professional review."
 
 ---
@@ -192,10 +192,10 @@ Always prefer:
 
 First:
 
-✅ Inspect the repository  
-✅ Understand current architecture  
-✅ Identify risks  
-✅ Propose a plan  
+✅ Inspect the repository
+✅ Understand current architecture
+✅ Identify risks
+✅ Propose a plan
 
 THEN implement.
 
@@ -207,8 +207,8 @@ Not the reverse.
 
 Move deliberately.
 
-Favor durability over speed.  
-Favor clarity over cleverness.  
+Favor durability over speed.
+Favor clarity over cleverness.
 Favor structure over AI theatrics.
 
 You are not building software.

@@ -11,12 +11,12 @@ This platform is being built as **regulatory-grade infrastructure**, not a light
 
 Every engineering decision must optimize for:
 
-- reliability  
-- auditability  
-- traceability  
-- explainability  
-- security  
-- regulatory defensibility  
+- reliability
+- auditability
+- traceability
+- explainability
+- security
+- regulatory defensibility
 
 NOT novelty.
 
@@ -32,13 +32,13 @@ Build the **AI-Native Regulatory Execution Infrastructure** for medical device c
 
 This system helps manufacturers:
 
-- understand evidence posture  
-- structure regulatory artifacts  
-- maintain traceability  
-- detect submission gaps  
-- prepare documentation  
-- respond to deficiencies  
-- remain audit-ready  
+- understand evidence posture
+- structure regulatory artifacts
+- maintain traceability
+- detect submission gaps
+- prepare documentation
+- respond to deficiencies
+- remain audit-ready
 
 The platform SUPPORTS regulatory professionals.
 
@@ -58,17 +58,17 @@ This repository already contains working components.
 
 You MUST:
 
-- avoid large refactors  
-- preserve flows  
-- maintain backwards compatibility  
-- introduce changes incrementally  
-- prefer feature flags  
+- avoid large refactors
+- preserve flows
+- maintain backwards compatibility
+- introduce changes incrementally
+- prefer feature flags
 
 Before modifying architecture:
 
-✅ understand current system  
-✅ document dependencies  
-✅ evaluate blast radius  
+✅ understand current system
+✅ document dependencies
+✅ evaluate blast radius
 
 No reckless rewrites.
 
@@ -100,14 +100,14 @@ Everything revolves around traceability.
 
 The system must be capable of linking:
 
-Claims  
-→ Hazards  
-→ Risks  
-→ Controls  
-→ Verification  
-→ Validation  
-→ Evidence  
-→ Labeling  
+Claims
+→ Hazards
+→ Risks
+→ Controls
+→ Verification
+→ Validation
+→ Evidence
+→ Labeling
 
 Auditors trust traceability.
 
@@ -125,10 +125,10 @@ Protect it.
 
 The platform must NEVER fabricate:
 
-- regulatory requirements  
-- standards  
-- citations  
-- approval pathways  
+- regulatory requirements
+- standards
+- citations
+- approval pathways
 
 If a source is unavailable:
 
@@ -148,12 +148,12 @@ No AI output becomes regulatory content without approval.
 
 Every generated artifact must include:
 
-- provenance  
-- model used  
-- timestamp  
-- inputs  
-- confidence  
-- reviewer  
+- provenance
+- model used
+- timestamp
+- inputs
+- confidence
+- reviewer
 
 No silent automation.
 
@@ -163,10 +163,10 @@ No silent automation.
 
 For any meaningful output, show:
 
-- why it was generated  
-- what data was used  
-- which rules triggered it  
-- confidence level  
+- why it was generated
+- what data was used
+- which rules triggered it
+- confidence level
 
 Black-box systems are rejected in regulated environments.
 
@@ -178,12 +178,12 @@ Regulatory artifacts evolve.
 
 You must version:
 
-- device profiles  
-- claims  
-- risks  
-- tests  
-- documents  
-- AI outputs  
+- device profiles
+- claims
+- risks
+- tests
+- documents
+- AI outputs
 
 Audit trails are not optional.
 
@@ -195,18 +195,18 @@ They are infrastructure.
 
 Assume customers include:
 
-- venture-backed device startups  
-- clinical-stage companies  
-- enterprise manufacturers  
+- venture-backed device startups
+- clinical-stage companies
+- enterprise manufacturers
 
 Data sensitivity is extremely high.
 
 Enforce:
 
-- row-level security  
-- signed URLs  
-- least-privilege keys  
-- tenant isolation  
+- row-level security
+- signed URLs
+- least-privilege keys
+- tenant isolation
 
 Never expose documents publicly.
 
@@ -216,10 +216,10 @@ Never expose documents publicly.
 
 We are NOT building:
 
-❌ a chatbot  
-❌ a template library  
-❌ a document folder  
-❌ a generic QMS  
+❌ a chatbot
+❌ a template library
+❌ a document folder
+❌ a generic QMS
 
 We ARE building:
 
@@ -235,12 +235,12 @@ The execution layer between regulation and submission.
 
 Over time, construct a graph mapping:
 
-Regulation  
-→ Requirement  
-→ Evidence  
-→ Document section  
-→ Test  
-→ Risk  
+Regulation
+→ Requirement
+→ Evidence
+→ Document section
+→ Test
+→ Risk
 
 This becomes extremely defensible.
 
@@ -256,20 +256,20 @@ Every device becomes structured data.
 
 ### Core Entities:
 
-- organizations  
-- users  
-- products  
-- device_versions  
-- intended_use  
-- claims  
-- hazards  
-- harms  
-- risk_controls  
-- verification_tests  
-- validation_tests  
-- evidence_items  
-- labeling_assets  
-- submission_targets  
+- organizations
+- users
+- products
+- device_versions
+- intended_use
+- claims
+- hazards
+- harms
+- risk_controls
+- verification_tests
+- validation_tests
+- evidence_items
+- labeling_assets
+- submission_targets
 
 Documents are OUTPUTS.
 
@@ -283,21 +283,21 @@ Create a linking system capable of expressing relationships:
 
 Example:
 
-claim → mitigated by → control  
-control → verified by → test  
+claim → mitigated by → control
+control → verified by → test
 
 Use a polymorphic link table such as:
 
 trace_links:
 
-- source_type  
-- source_id  
-- target_type  
-- target_id  
-- relationship  
-- rationale  
-- created_by  
-- timestamp  
+- source_type
+- source_id
+- target_type
+- target_id
+- relationship
+- rationale
+- created_by
+- timestamp
 
 Make it flexible.
 
@@ -311,10 +311,10 @@ One of the highest-value features.
 
 Implement a rules engine that evaluates:
 
-- missing links  
-- weak coverage  
-- inconsistencies  
-- unsupported claims  
+- missing links
+- weak coverage
+- inconsistencies
+- unsupported claims
 
 IMPORTANT:
 
@@ -334,10 +334,10 @@ Transparency builds trust.
 
 Display:
 
-- risk coverage  
-- trace completeness  
-- evidence strength  
-- unresolved gaps  
+- risk coverage
+- trace completeness
+- evidence strength
+- unresolved gaps
 
 Provide drill-down.
 
@@ -355,9 +355,9 @@ Avoid static templates initially.
 
 Generate sections such as:
 
-- device description  
-- risk summary  
-- V&V overview  
+- device description
+- risk summary
+- V&V overview
 
 Require approval before export.
 
@@ -371,10 +371,10 @@ Track versions in database.
 
 Allow users to:
 
-Input regulator question  
-→ link impacted artifacts  
-→ draft response  
-→ propose edits  
+Input regulator question
+→ link impacted artifacts
+→ draft response
+→ propose edits
 
 Track everything.
 
@@ -386,17 +386,17 @@ Regulators care about consistency.
 
 AI may assist with:
 
-- summarization  
-- classification suggestions  
-- link recommendations  
-- inconsistency detection  
-- drafting  
+- summarization
+- classification suggestions
+- link recommendations
+- inconsistency detection
+- drafting
 
 AI must NEVER:
 
-- declare compliance  
-- invent citations  
-- operate without logging  
+- declare compliance
+- invent citations
+- operate without logging
 
 ---
 
@@ -406,18 +406,18 @@ Example schema:
 
 ai_runs:
 
-- id  
-- user_id  
-- org_id  
-- model  
-- prompt_hash  
-- inputs  
-- output  
-- citations  
-- confidence  
-- approved_by  
-- approved_at  
-- timestamp  
+- id
+- user_id
+- org_id
+- model
+- prompt_hash
+- inputs
+- output
+- citations
+- confidence
+- approved_by
+- approved_at
+- timestamp
 
 Store BEFORE display.
 
@@ -429,12 +429,12 @@ Always.
 
 Never output:
 
-❌ "Your device is compliant."  
-❌ "This will pass FDA."  
+❌ "Your device is compliant."
+❌ "This will pass FDA."
 
 Use:
 
-✅ "Potential gaps detected relative to regulatory expectations."  
+✅ "Potential gaps detected relative to regulatory expectations."
 ✅ "Draft for professional review."
 
 Language shapes liability.
@@ -449,12 +449,12 @@ Be disciplined.
 
 Before coding:
 
-- inspect architecture  
-- map dependencies  
-- identify stable vs experimental modules  
-- understand DB schema  
-- review auth  
-- review storage  
+- inspect architecture
+- map dependencies
+- identify stable vs experimental modules
+- understand DB schema
+- review auth
+- review storage
 
 Produce a short internal report.
 
@@ -484,9 +484,9 @@ This alone creates enormous value.
 
 Support:
 
-- filtering  
-- gap highlighting  
-- manual + AI-assisted linking  
+- filtering
+- gap highlighting
+- manual + AI-assisted linking
 
 ---
 
@@ -520,9 +520,9 @@ Build it.
 
 The platform must feel:
 
-Calm.  
-Serious.  
-Institutional.  
+Calm.
+Serious.
+Institutional.
 
 NOT flashy.
 
@@ -540,10 +540,10 @@ Think:
 
 Do NOT:
 
-- rewrite the repo  
-- over-engineer early  
-- introduce microservices prematurely  
-- build for hyperscale now  
+- rewrite the repo
+- over-engineer early
+- introduce microservices prematurely
+- build for hyperscale now
 
 Earn complexity.
 
@@ -553,10 +553,10 @@ Earn complexity.
 
 You are winning when:
 
-- teams stop using spreadsheets  
-- auditors trust exports  
-- traceability becomes effortless  
-- evidence gaps surface early  
+- teams stop using spreadsheets
+- auditors trust exports
+- traceability becomes effortless
+- evidence gaps surface early
 
 ---
 
@@ -564,10 +564,10 @@ You are winning when:
 
 If executed correctly:
 
-1️⃣ Knowledge Graph  
-2️⃣ Workflow Lock-in  
-3️⃣ Data Gravity  
-4️⃣ Audit Trust  
+1️⃣ Knowledge Graph
+2️⃣ Workflow Lock-in
+3️⃣ Data Gravity
+4️⃣ Audit Trust
 
 Few companies achieve even one.
 
