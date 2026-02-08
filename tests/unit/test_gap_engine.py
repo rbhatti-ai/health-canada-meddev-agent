@@ -206,12 +206,12 @@ class TestGapReportModel:
         report = GapReport(
             device_version_id="test-123",
             evaluated_at="2026-02-07T20:00:00+00:00",
-            rules_executed=12,
+            rules_executed=13,
             total_findings=3,
             critical_count=1,
             major_count=2,
         )
-        assert report.rules_executed == 12
+        assert report.rules_executed == 13
         assert report.total_findings == 3
 
     def test_gap_report_defaults(self):
@@ -250,11 +250,11 @@ class TestGapEngineInitialization:
     def test_engine_has_12_rules(self, gap_engine):
         """Engine should have exactly 12 rule definitions."""
         rules = gap_engine.get_rules()
-        assert len(rules) == 12
+        assert len(rules) == 13
 
     def test_engine_has_12_evaluators(self, gap_engine):
         """Engine should have an evaluator for each rule."""
-        assert len(gap_engine._rule_evaluators) == 12
+        assert len(gap_engine._rule_evaluators) == 13
 
     def test_all_rules_have_evaluators(self, gap_engine):
         """Every defined rule should have a matching evaluator."""
@@ -273,7 +273,7 @@ class TestGapEngineInitialization:
         for rule_id in gap_engine.RULE_DEFINITIONS:
             assert rule_id.startswith("GAP-"), f"Rule {rule_id} doesn't follow GAP-NNN pattern"
             num = int(rule_id.split("-")[1])
-            assert 1 <= num <= 12
+            assert 1 <= num <= 13
 
 
 @pytest.mark.unit
@@ -299,7 +299,7 @@ class TestGapEngineEvaluate:
     def test_evaluate_counts_rules_executed(self, gap_engine):
         """Report should count how many rules were executed."""
         report = gap_engine.evaluate(DEVICE_VERSION_ID)
-        assert report.rules_executed == 12
+        assert report.rules_executed == 13
 
     def test_evaluate_empty_device_has_completeness_gaps(self, gap_engine, mock_repository):
         """Empty device should trigger completeness rules (004, 007, 009)."""
@@ -320,7 +320,7 @@ class TestGapEngineEvaluate:
         mock_repository.get_by_device_version.side_effect = Exception("DB error")
         # Should not raise — best-effort pattern
         report = gap_engine.evaluate(DEVICE_VERSION_ID)
-        assert report.rules_executed == 12
+        assert report.rules_executed == 13
 
     def test_evaluate_skips_disabled_rules(self, mock_traceability, mock_repository):
         """Disabled rules should not be executed."""
@@ -381,12 +381,12 @@ class TestGetRules:
     def test_get_rules_returns_all(self, gap_engine):
         """get_rules() should return all 12 rules."""
         rules = gap_engine.get_rules()
-        assert len(rules) == 12
+        assert len(rules) == 13
 
     def test_get_enabled_rules_default(self, gap_engine):
         """get_enabled_rules() should return 12 by default (all enabled)."""
         rules = gap_engine.get_enabled_rules()
-        assert len(rules) == 12
+        assert len(rules) == 13
 
     def test_get_enabled_rules_excludes_disabled(self, mock_traceability, mock_repository):
         """get_enabled_rules() should exclude disabled rules."""
@@ -403,7 +403,7 @@ class TestGetRules:
             enabled=False,
         )
         rules = engine.get_enabled_rules()
-        assert len(rules) == 11
+        assert len(rules) == 12
         assert all(r.id != "GAP-007" for r in rules)
 
 
@@ -949,6 +949,163 @@ class TestGAP012NoClinicalEvidence:
         assert len(findings) == 0
 
 
+@pytest.mark.unit
+class TestGAP013UnclassifiedSensitiveAssets:
+    """Tests for GAP-013: Unclassified sensitive assets.
+
+    This rule detects evidence items that have no confidentiality
+    classification (per SOR/98-282 s.43.2). Uses ConfidentialityService
+    to check classification status.
+    """
+
+    def test_no_device_version_no_findings(self, gap_engine, mock_repository):
+        """No device version found should produce no findings."""
+        mock_repository.get_by_id.return_value = None
+        findings = gap_engine.evaluate_rule("GAP-013", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_no_organization_id_no_findings(self, gap_engine, mock_repository):
+        """Device version without org ID should produce no findings."""
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            # Missing organization_id
+        }
+        findings = gap_engine.evaluate_rule("GAP-013", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_no_evidence_items_no_findings(self, gap_engine, mock_repository):
+        """Device version with no evidence should produce no findings."""
+        from uuid import uuid4
+
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "organization_id": str(uuid4()),
+        }
+        mock_repository.get_by_device_version.return_value = []
+        findings = gap_engine.evaluate_rule("GAP-013", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_unclassified_evidence_produces_finding(self, gap_engine, mock_repository):
+        """Evidence items without classification should produce findings."""
+        from uuid import uuid4
+
+        org_id = uuid4()
+        ev1_id = uuid4()
+
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "organization_id": str(org_id),
+        }
+        mock_repository.get_by_device_version.return_value = [
+            {"id": str(ev1_id), "title": "Test Report"},
+        ]
+
+        findings = gap_engine.evaluate_rule("GAP-013", DEVICE_VERSION_ID)
+        assert len(findings) == 1
+        assert findings[0].rule_id == "GAP-013"
+        assert findings[0].severity == "minor"
+        assert findings[0].entity_type == "evidence_item"
+        assert "Test Report" in findings[0].description
+
+    def test_classified_evidence_no_finding(self, gap_engine, mock_repository):
+        """Evidence items with classification should not produce findings."""
+        from uuid import uuid4
+
+        org_id = uuid4()
+        ev1_id = uuid4()
+
+        # Classify the evidence item first
+        gap_engine._confidentiality.classify(
+            entity_type="evidence_item",
+            entity_id=ev1_id,
+            level="public",
+            organization_id=org_id,
+        )
+
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "organization_id": str(org_id),
+        }
+        mock_repository.get_by_device_version.return_value = [
+            {"id": str(ev1_id), "title": "Test Report"},
+        ]
+
+        findings = gap_engine.evaluate_rule("GAP-013", DEVICE_VERSION_ID)
+        assert len(findings) == 0
+
+    def test_mixed_classified_and_unclassified(self, gap_engine, mock_repository):
+        """Should only report unclassified items."""
+        from uuid import uuid4
+
+        org_id = uuid4()
+        ev1_id = uuid4()  # Will classify
+        ev2_id = uuid4()  # Will leave unclassified
+
+        # Classify only the first item
+        gap_engine._confidentiality.classify(
+            entity_type="evidence_item",
+            entity_id=ev1_id,
+            level="confidential_submission",
+            organization_id=org_id,
+            justification="Proprietary data",
+            harm_if_disclosed="Competitive harm",
+        )
+
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "organization_id": str(org_id),
+        }
+        mock_repository.get_by_device_version.return_value = [
+            {"id": str(ev1_id), "title": "Classified Report"},
+            {"id": str(ev2_id), "title": "Unclassified Report"},
+        ]
+
+        findings = gap_engine.evaluate_rule("GAP-013", DEVICE_VERSION_ID)
+        assert len(findings) == 1
+        assert "Unclassified Report" in findings[0].description
+
+    def test_finding_has_remediation(self, gap_engine, mock_repository):
+        """GAP-013 finding should have proper remediation guidance."""
+        from uuid import uuid4
+
+        org_id = uuid4()
+        ev_id = uuid4()
+
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "organization_id": str(org_id),
+        }
+        mock_repository.get_by_device_version.return_value = [
+            {"id": str(ev_id), "title": "Test Report"},
+        ]
+
+        findings = gap_engine.evaluate_rule("GAP-013", DEVICE_VERSION_ID)
+        assert len(findings) == 1
+        assert "ConfidentialityService" in findings[0].remediation
+        assert "public" in findings[0].remediation or "trade_secret" in findings[0].remediation
+
+    def test_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-013 finding should include citation fields."""
+        from uuid import uuid4
+
+        org_id = uuid4()
+        ev_id = uuid4()
+
+        mock_repository.get_by_id.return_value = {
+            "id": DEVICE_VERSION_ID,
+            "organization_id": str(org_id),
+        }
+        mock_repository.get_by_device_version.return_value = [
+            {"id": str(ev_id), "title": "Test Report"},
+        ]
+
+        findings = gap_engine.evaluate_rule("GAP-013", DEVICE_VERSION_ID)
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "SOR-98-282-S43.2"
+        assert findings[0].citation_text is not None
+        assert "SOR/98-282" in findings[0].citation_text
+
+
 # =============================================================================
 # Regulatory Language Safety Tests
 # =============================================================================
@@ -1318,10 +1475,14 @@ class TestRuleFindingsIncludeCitations:
 class TestRuleVersionsBumped:
     """Tests that rule versions were bumped for Sprint 5B."""
 
-    def test_all_rules_version_2(self, gap_engine):
-        """All rules should be version 2 after citation addition."""
+    def test_existing_rules_version_2(self, gap_engine):
+        """Rules 1-12 should be version 2 after citation addition."""
         for rule_id, rule in gap_engine.RULE_DEFINITIONS.items():
-            assert rule.version == 2, f"Rule {rule_id} version should be 2, got {rule.version}"
+            if rule_id == "GAP-013":
+                # GAP-013 is new in Sprint 6C, starts at version 1
+                assert rule.version == 1, f"Rule {rule_id} version should be 1, got {rule.version}"
+            else:
+                assert rule.version == 2, f"Rule {rule_id} version should be 2, got {rule.version}"
 
 
 @pytest.mark.unit

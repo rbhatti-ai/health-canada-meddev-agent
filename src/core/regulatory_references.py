@@ -257,6 +257,16 @@ REGULATION_REFERENCES: dict[str, RegulatoryReference] = {
         topics=[TOPIC_MDL, TOPIC_CLINICAL],
         device_classes=["II", "III", "IV"],
     ),
+    "SOR-98-282-S43.2": RegulatoryReference(
+        id="SOR-98-282-S43.2",
+        reference_type="regulation",
+        document_id="SOR/98-282",
+        section="s.43.2",
+        title="Confidential Business Information",
+        description="CBI treatment and identification requirements",
+        topics=[TOPIC_MDL],
+        device_classes=["II", "III", "IV"],
+    ),
     # -------------------------------------------------------------------------
     # Guidance Documents (GUI- series)
     # -------------------------------------------------------------------------

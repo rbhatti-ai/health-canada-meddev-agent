@@ -29,6 +29,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.core.confidentiality import ConfidentialityService, get_confidentiality_service
 from src.core.regulatory_references import get_reference_registry
 from src.core.traceability import TraceabilityEngine, get_traceability_engine
 from src.persistence.twin_repository import TwinRepository, get_twin_repository
@@ -271,12 +272,23 @@ class GapDetectionEngine:
             primary_reference="SOR-98-282-S32-2-C",
             secondary_references=["GUI-0102"],
         ),
+        "GAP-013": GapRuleDefinition(
+            id="GAP-013",
+            name="Unclassified sensitive assets",
+            description="Evidence items with no confidentiality classification",
+            severity="minor",
+            category="consistency",
+            version=1,
+            primary_reference="SOR-98-282-S43.2",
+            secondary_references=[],
+        ),
     }
 
     def __init__(
         self,
         traceability_engine: TraceabilityEngine | None = None,
         twin_repository: TwinRepository | None = None,
+        confidentiality_service: ConfidentialityService | None = None,
     ) -> None:
         """Initialize the Gap Detection Engine.
 
@@ -285,10 +297,13 @@ class GapDetectionEngine:
                 Defaults to singleton if not provided.
             twin_repository: Repository for querying regulatory twin entities.
                 Defaults to singleton if not provided.
+            confidentiality_service: Service for IP classification checks.
+                Defaults to singleton if not provided.
         """
         self.logger = get_logger(self.__class__.__name__)
         self._traceability = traceability_engine or get_traceability_engine()
         self._repository = twin_repository or get_twin_repository()
+        self._confidentiality = confidentiality_service or get_confidentiality_service()
 
         # Instance-level copy prevents cross-instance rule mutation
         self.RULE_DEFINITIONS: dict[str, GapRuleDefinition] = copy.deepcopy(
@@ -312,6 +327,7 @@ class GapDetectionEngine:
             "GAP-010": self._rule_incomplete_risk_chain,
             "GAP-011": self._rule_draft_evidence_only,
             "GAP-012": self._rule_no_clinical_evidence,
+            "GAP-013": self._rule_unclassified_sensitive_assets,
         }
 
     def evaluate(self, device_version_id: str) -> GapReport:
@@ -1032,6 +1048,86 @@ class GapDetectionEngine:
 
         return findings
 
+    def _rule_unclassified_sensitive_assets(self, device_version_id: str) -> list[GapFinding]:
+        """GAP-013: Find evidence items without confidentiality classification.
+
+        Per SOR/98-282 s.43.2, manufacturers should identify which portions
+        of their submissions contain confidential business information.
+        This rule flags evidence items that have not been classified.
+        """
+        findings: list[GapFinding] = []
+        rule = self.RULE_DEFINITIONS["GAP-013"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-013")
+
+        # Get device version to find organization
+        device_version = self._repository.get_by_id("device_versions", device_version_id)
+        if not device_version:
+            return findings
+
+        org_id = device_version.get("organization_id")
+        if not org_id:
+            return findings
+
+        # Get all evidence items for this device version
+        evidence_items = self._repository.get_by_device_version("evidence_items", device_version_id)
+
+        # Build list of (entity_type, entity_id) tuples
+        from uuid import UUID
+
+        known_entities: list[tuple[str, UUID]] = []
+        for item in evidence_items:
+            item_id = item.get("id")
+            if item_id:
+                try:
+                    known_entities.append(("evidence_item", UUID(str(item_id))))
+                except (ValueError, TypeError):
+                    pass
+
+        if not known_entities:
+            return findings
+
+        # Check which are unclassified
+        try:
+            org_uuid = UUID(str(org_id))
+        except (ValueError, TypeError):
+            return findings
+
+        unclassified = self._confidentiality.get_unclassified(org_uuid, known_entities)
+
+        for entity_type, entity_id in unclassified:
+            # Look up the evidence item title for better description
+            item_title = "Unknown"
+            for item in evidence_items:
+                if str(item.get("id")) == str(entity_id):
+                    item_title = item.get("title", "Unknown")
+                    break
+
+            findings.append(
+                GapFinding(
+                    rule_id=rule.id,
+                    rule_name=rule.name,
+                    severity=rule.severity,
+                    category=rule.category,
+                    description=(
+                        f"Evidence item '{item_title}' has no confidentiality "
+                        f"classification. Before submission, determine whether "
+                        f"this item contains confidential business information."
+                    ),
+                    entity_type=entity_type,
+                    entity_id=str(entity_id),
+                    remediation=(
+                        "Classify this evidence item as 'public', "
+                        "'confidential_submission', 'trade_secret', or "
+                        "'patent_pending' using the ConfidentialityService."
+                    ),
+                    regulation_ref=reg_ref,
+                    guidance_ref=guid_ref,
+                    citation_text=citation,
+                )
+            )
+
+        return findings
+
 
 # =============================================================================
 # Singleton Access
@@ -1043,20 +1139,23 @@ _gap_engine: GapDetectionEngine | None = None
 def get_gap_engine(
     traceability_engine: TraceabilityEngine | None = None,
     twin_repository: TwinRepository | None = None,
+    confidentiality_service: ConfidentialityService | None = None,
 ) -> GapDetectionEngine:
     """Get or create the singleton GapDetectionEngine instance.
 
     Args:
         traceability_engine: Optional override for testing.
         twin_repository: Optional override for testing.
+        confidentiality_service: Optional override for testing.
 
     Returns:
         GapDetectionEngine singleton instance.
     """
     global _gap_engine
-    if _gap_engine is None or traceability_engine or twin_repository:
+    if _gap_engine is None or traceability_engine or twin_repository or confidentiality_service:
         _gap_engine = GapDetectionEngine(
             traceability_engine=traceability_engine,
             twin_repository=twin_repository,
+            confidentiality_service=confidentiality_service,
         )
     return _gap_engine
