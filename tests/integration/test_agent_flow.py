@@ -454,9 +454,9 @@ class TestErrorHandlingAndRecovery:
 class TestAgentCapabilities:
     """Integration tests: agent exposes correct capabilities."""
 
-    def test_agent_has_18_tools(self, mock_agent):
-        """Agent should have 18 tools (13 new + 5 original)."""
-        assert mock_agent.tool_count == 18
+    def test_agent_has_20_tools(self, mock_agent):
+        """Agent should have 20 tools (13 twin + 5 original + 2 IP)."""
+        assert mock_agent.tool_count == 20
 
     def test_get_available_workflows_returns_all_four(self, mock_agent):
         """get_available_workflows returns all 4 workflow definitions."""

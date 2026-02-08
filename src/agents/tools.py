@@ -14,6 +14,7 @@ from langchain_core.tools import tool
 
 from src.core.checklist import generate_checklist as _generate_checklist
 from src.core.classification import classify_device as _classify_device
+from src.core.confidentiality import get_confidentiality_service
 from src.core.models import (
     DeviceClass,
     DeviceInfo,
@@ -384,6 +385,184 @@ def get_fee_information(device_class: str) -> dict[str, Any]:
     }
 
 
+@tool
+def classify_confidentiality(
+    entity_type: str,
+    entity_id: str,
+    organization_id: str,
+    level: str,
+    patent_number: str | None = None,
+    justification: str | None = None,
+    harm_if_disclosed: str | None = None,
+) -> dict[str, Any]:
+    """
+    Classify an entity's confidentiality level for IP protection.
+
+    Use this tool when a user needs to mark sensitive information as
+    confidential, trade secret, or patent-pending before submission.
+    Per SOR/98-282 s.43.2, manufacturers must identify CBI in submissions.
+
+    Args:
+        entity_type: Type of entity - one of:
+            "evidence_item", "artifact", "claim", "document",
+            "test_data", "design_file", "manufacturing_process",
+            "supplier_agreement"
+        entity_id: UUID of the entity to classify
+        organization_id: UUID of the owning organization
+        level: Confidentiality level - one of:
+            "public" - Can appear in any document
+            "confidential_submission" - Redacted from public portions
+            "trade_secret" - Never disclosed, summarized only
+            "patent_pending" - Can reference patent application
+        patent_number: Required if level is "patent_pending"
+        justification: Reason for confidential classification (required for CBI)
+        harm_if_disclosed: Competitive harm if disclosed (required for CBI)
+
+    Returns:
+        Classification result with tag details
+    """
+    from uuid import UUID
+
+    logger.info(f"Classifying {entity_type}/{entity_id} as {level}")
+
+    # Validate level
+    valid_levels = ["public", "confidential_submission", "trade_secret", "patent_pending"]
+    if level not in valid_levels:
+        return {
+            "success": False,
+            "error": f"Invalid level '{level}'. Valid levels: {valid_levels}",
+        }
+
+    try:
+        entity_uuid = UUID(entity_id)
+        org_uuid = UUID(organization_id)
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": f"Invalid UUID: {e}",
+        }
+
+    # Check required fields for CBI
+    if level in ("trade_secret", "confidential_submission"):
+        if not justification:
+            return {
+                "success": False,
+                "error": f"CBI classification ({level}) requires justification",
+            }
+        if not harm_if_disclosed:
+            return {
+                "success": False,
+                "error": f"CBI classification ({level}) requires harm_if_disclosed",
+            }
+
+    if level == "patent_pending" and not patent_number:
+        return {
+            "success": False,
+            "error": "patent_pending level requires patent_number",
+        }
+
+    try:
+        service = get_confidentiality_service()
+        tag = service.classify(
+            entity_type=entity_type,
+            entity_id=entity_uuid,
+            level=level,  # type: ignore[arg-type]
+            organization_id=org_uuid,
+            patent_application_number=patent_number,
+            justification=justification,
+            harm_if_disclosed=harm_if_disclosed,
+        )
+
+        return {
+            "success": True,
+            "entity_type": tag.entity_type,
+            "entity_id": str(tag.entity_id),
+            "level": tag.level,
+            "requires_cbi_request": tag.level in ("trade_secret", "confidential_submission"),
+            "citation": tag.citation_text,
+        }
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@tool
+def get_ip_inventory(organization_id: str) -> dict[str, Any]:
+    """
+    Get summary of IP assets (trade secrets, patents pending).
+
+    Use this tool when a user wants to review their confidential
+    business information before submission, or needs to generate
+    a CBI request document.
+
+    Args:
+        organization_id: UUID of the organization
+
+    Returns:
+        IP inventory summary with counts by level and CBI status
+    """
+    from uuid import UUID
+
+    logger.info(f"Getting IP inventory for org {organization_id}")
+
+    try:
+        org_uuid = UUID(organization_id)
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": f"Invalid organization_id: {e}",
+        }
+
+    service = get_confidentiality_service()
+
+    # Get classifications by level
+    trade_secrets = service.get_trade_secrets(org_uuid)
+    patent_pending = service.get_patent_pending(org_uuid)
+    confidential_submission = service.get_confidential_submission(org_uuid)
+    public = service.get_public(org_uuid)
+
+    # Get CBI candidates (trade_secret + confidential_submission)
+    cbi_candidates = service.get_cbi_candidates(org_uuid)
+
+    return {
+        "success": True,
+        "organization_id": organization_id,
+        "summary": {
+            "public_count": len(public),
+            "confidential_submission_count": len(confidential_submission),
+            "trade_secret_count": len(trade_secrets),
+            "patent_pending_count": len(patent_pending),
+            "total_classified": len(public)
+            + len(confidential_submission)
+            + len(trade_secrets)
+            + len(patent_pending),
+        },
+        "cbi_status": {
+            "requires_cbi_request": len(cbi_candidates) > 0,
+            "cbi_item_count": len(cbi_candidates),
+        },
+        "trade_secrets": [
+            {
+                "entity_type": ts.entity_type,
+                "entity_id": str(ts.entity_id),
+                "has_attestation": ts.trade_secret_attestation,
+            }
+            for ts in trade_secrets
+        ],
+        "patents_pending": [
+            {
+                "entity_type": pp.entity_type,
+                "entity_id": str(pp.entity_id),
+                "patent_application_number": pp.patent_application_number,
+            }
+            for pp in patent_pending
+        ],
+        "citation": "[SOR/98-282, s.43.2]",
+    }
+
+
 def get_agent_tools() -> list[Any]:
     """Return all available agent tools."""
     return [
@@ -392,4 +571,6 @@ def get_agent_tools() -> list[Any]:
         create_checklist,
         search_regulations,
         get_fee_information,
+        classify_confidentiality,
+        get_ip_inventory,
     ]

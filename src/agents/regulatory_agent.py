@@ -207,7 +207,7 @@ class RegulatoryAgent:
         # Initialize LLM
         self.llm = self._create_llm()
 
-        # Combine ALL tools: 5 original + 13 regulatory twin = 18 total
+        # Combine ALL tools: 7 original (5 base + 2 IP) + 13 regulatory twin = 20 total
         original_tools = get_agent_tools()
         twin_tools = get_regulatory_twin_tools()
         self.tools = original_tools + twin_tools

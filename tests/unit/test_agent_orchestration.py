@@ -71,8 +71,8 @@ def mock_agent(mock_settings):
         patch("src.agents.regulatory_agent.get_regulatory_twin_tools") as mock_twin_tools,
         patch.object(RegulatoryAgent, "_build_graph") as mock_graph,
     ):
-        # Return 5 mock original tools
-        mock_tools.return_value = [MagicMock(name=f"orig_tool_{i}") for i in range(5)]
+        # Return 7 mock original tools (5 base + 2 IP)
+        mock_tools.return_value = [MagicMock(name=f"orig_tool_{i}") for i in range(7)]
         # Return 13 mock twin tools
         mock_twin_tools.return_value = [MagicMock(name=f"twin_tool_{i}") for i in range(13)]
 
@@ -294,9 +294,9 @@ class TestProvenanceHelper:
 class TestRegulatoryAgentInit:
     """Tests for RegulatoryAgent initialization (mocked)."""
 
-    def test_agent_has_18_tools(self, mock_agent: RegulatoryAgent) -> None:
-        """Agent should have 18 tools (5 original + 13 twin)."""
-        assert mock_agent.tool_count == 18
+    def test_agent_has_20_tools(self, mock_agent: RegulatoryAgent) -> None:
+        """Agent should have 20 tools (5 original + 13 twin + 2 IP)."""
+        assert mock_agent.tool_count == 20
 
     def test_agent_default_model(self, mock_agent: RegulatoryAgent) -> None:
         """Agent uses default model from settings."""
