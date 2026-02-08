@@ -1126,3 +1126,221 @@ class TestSingleton:
         )
         # With overrides, should create new
         assert engine1 is not engine2
+
+
+# =============================================================================
+# Sprint 5B: Citation Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestGapFindingCitationFields:
+    """Tests for GapFinding citation fields (Sprint 5B)."""
+
+    def test_gap_finding_has_citation_fields(self):
+        """GapFinding should have citation fields."""
+        finding = GapFinding(
+            rule_id="GAP-001",
+            rule_name="Test Rule",
+            severity="critical",
+            category="coverage",
+            description="Test",
+            remediation="Test",
+            regulation_ref="ISO-14971-2019-7",
+            guidance_ref="GUI-0102",
+            citation_text="[ISO 14971:2019, 7]",
+        )
+        assert finding.regulation_ref == "ISO-14971-2019-7"
+        assert finding.guidance_ref == "GUI-0102"
+        assert finding.citation_text == "[ISO 14971:2019, 7]"
+
+    def test_gap_finding_citation_fields_default_to_none(self):
+        """Citation fields should default to None."""
+        finding = GapFinding(
+            rule_id="GAP-001",
+            rule_name="Test Rule",
+            severity="critical",
+            category="coverage",
+            description="Test",
+            remediation="Test",
+        )
+        assert finding.regulation_ref is None
+        assert finding.guidance_ref is None
+        assert finding.citation_text is None
+
+    def test_gap_finding_partial_citation_fields(self):
+        """GapFinding should accept partial citation fields."""
+        finding = GapFinding(
+            rule_id="GAP-001",
+            rule_name="Test Rule",
+            severity="critical",
+            category="coverage",
+            description="Test",
+            remediation="Test",
+            regulation_ref="SOR-98-282-S32",
+            citation_text="[SOR/98-282, s.32]",
+        )
+        assert finding.regulation_ref == "SOR-98-282-S32"
+        assert finding.guidance_ref is None
+        assert finding.citation_text == "[SOR/98-282, s.32]"
+
+
+@pytest.mark.unit
+class TestGapRuleDefinitionCitationFields:
+    """Tests for GapRuleDefinition citation fields (Sprint 5B)."""
+
+    def test_rule_definition_has_citation_fields(self):
+        """GapRuleDefinition should have citation fields."""
+        rule = GapRuleDefinition(
+            id="GAP-TEST",
+            name="Test Rule",
+            description="Test",
+            severity="critical",
+            category="coverage",
+            primary_reference="ISO-14971-2019-7",
+            secondary_references=["ISO-14971-2019-7.1", "SOR-98-282-S10"],
+        )
+        assert rule.primary_reference == "ISO-14971-2019-7"
+        assert rule.secondary_references == ["ISO-14971-2019-7.1", "SOR-98-282-S10"]
+
+    def test_rule_definition_citation_fields_default(self):
+        """Citation fields should default to None/empty list."""
+        rule = GapRuleDefinition(
+            id="GAP-TEST",
+            name="Test Rule",
+            description="Test",
+            severity="critical",
+            category="coverage",
+        )
+        assert rule.primary_reference is None
+        assert rule.secondary_references == []
+
+    def test_all_builtin_rules_have_citations(self, gap_engine):
+        """All 12 built-in rules should have primary_reference (Sprint 5B)."""
+        for rule_id, rule in gap_engine.RULE_DEFINITIONS.items():
+            assert rule.primary_reference is not None, f"Rule {rule_id} missing primary_reference"
+            assert len(rule.primary_reference) > 0, f"Rule {rule_id} has empty primary_reference"
+
+
+@pytest.mark.unit
+class TestCitationGeneration:
+    """Tests for citation generation helper method (Sprint 5B)."""
+
+    def test_get_citation_for_rule_returns_tuple(self, gap_engine):
+        """_get_citation_for_rule should return tuple of 3 values."""
+        result = gap_engine._get_citation_for_rule("GAP-001")
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+
+    def test_get_citation_for_gap_001(self, gap_engine):
+        """GAP-001 should return ISO 14971 citation."""
+        reg_ref, guid_ref, citation = gap_engine._get_citation_for_rule("GAP-001")
+        assert reg_ref == "ISO-14971-2019-7"
+        assert citation is not None
+        assert "14971" in citation
+
+    def test_get_citation_for_gap_004(self, gap_engine):
+        """GAP-004 should return SOR/98-282 s.32(2)(a) citation."""
+        reg_ref, guid_ref, citation = gap_engine._get_citation_for_rule("GAP-004")
+        assert reg_ref == "SOR-98-282-S32-2-A"
+        assert citation is not None
+        assert "SOR/98-282" in citation
+
+    def test_get_citation_for_gap_012(self, gap_engine):
+        """GAP-012 should return SOR/98-282 s.32(2)(c) citation."""
+        reg_ref, guid_ref, citation = gap_engine._get_citation_for_rule("GAP-012")
+        assert reg_ref == "SOR-98-282-S32-2-C"
+        assert citation is not None
+        assert "SOR/98-282" in citation
+
+    def test_get_citation_for_unknown_rule(self, gap_engine):
+        """Unknown rule should return None tuple."""
+        result = gap_engine._get_citation_for_rule("GAP-999")
+        assert result == (None, None, None)
+
+
+@pytest.mark.unit
+class TestRuleFindingsIncludeCitations:
+    """Tests that rule findings include citations (Sprint 5B)."""
+
+    def test_gap_001_finding_has_citation(self, gap_engine, mock_repository, mock_traceability):
+        """GAP-001 finding should include citation fields."""
+        mock_repository.get_by_device_version.return_value = [
+            {"id": "hazard-1", "description": "Test hazard"}
+        ]
+        mock_traceability.get_links_from.return_value = []  # No mitigation
+
+        findings = gap_engine._rule_unmitigated_hazards(DEVICE_VERSION_ID)
+
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "ISO-14971-2019-7"
+        assert findings[0].citation_text is not None
+        assert "14971" in findings[0].citation_text
+
+    def test_gap_004_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-004 finding should include citation fields."""
+        mock_repository.get_by_device_version.return_value = []  # No intended use
+
+        findings = gap_engine._rule_missing_intended_use(DEVICE_VERSION_ID)
+
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "SOR-98-282-S32-2-A"
+        assert findings[0].guidance_ref == "GUI-0098"
+        assert findings[0].citation_text is not None
+        assert "SOR/98-282" in findings[0].citation_text
+
+    def test_gap_009_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-009 finding should include citation fields."""
+        mock_repository.get_by_device_version.return_value = []  # No labeling
+
+        findings = gap_engine._rule_missing_labeling(DEVICE_VERSION_ID)
+
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "SOR-98-282-PART5"
+        assert findings[0].guidance_ref == "GUI-0015"
+        assert findings[0].citation_text is not None
+
+    def test_gap_012_finding_has_citation(self, gap_engine, mock_repository):
+        """GAP-012 finding should include citation fields."""
+        mock_repository.get_by_id.return_value = {"device_class": "IV"}
+        mock_repository.get_by_device_version.return_value = []  # No evidence
+
+        findings = gap_engine._rule_no_clinical_evidence(DEVICE_VERSION_ID)
+
+        assert len(findings) == 1
+        assert findings[0].regulation_ref == "SOR-98-282-S32-2-C"
+        assert findings[0].guidance_ref == "GUI-0102"
+        assert findings[0].citation_text is not None
+        assert "SOR/98-282" in findings[0].citation_text
+
+
+@pytest.mark.unit
+class TestRuleVersionsBumped:
+    """Tests that rule versions were bumped for Sprint 5B."""
+
+    def test_all_rules_version_2(self, gap_engine):
+        """All rules should be version 2 after citation addition."""
+        for rule_id, rule in gap_engine.RULE_DEFINITIONS.items():
+            assert rule.version == 2, f"Rule {rule_id} version should be 2, got {rule.version}"
+
+
+@pytest.mark.unit
+class TestCitationRegistryIntegration:
+    """Tests for citation registry integration (Sprint 5B)."""
+
+    def test_engine_has_citation_registry(self, gap_engine):
+        """Engine should have reference to citation registry."""
+        assert gap_engine._citation_registry is not None
+
+    def test_citation_registry_has_references(self, gap_engine):
+        """Citation registry should have pre-populated references."""
+        assert gap_engine._citation_registry.count() >= 50
+
+    def test_all_primary_references_exist_in_registry(self, gap_engine):
+        """All rule primary references should exist in registry."""
+        for rule_id, rule in gap_engine.RULE_DEFINITIONS.items():
+            if rule.primary_reference:
+                ref = gap_engine._citation_registry.get_by_id(rule.primary_reference)
+                assert (
+                    ref is not None
+                ), f"Primary reference {rule.primary_reference} for {rule_id} not in registry"

@@ -1,9 +1,13 @@
 """
-Gap Detection Engine — Sprint 3a.
+Gap Detection Engine — Sprint 3a + 5B citations.
 
 Deterministic, rules-based engine that evaluates regulatory readiness.
 12 versioned rules. No AI dependency. Each rule produces explainable
-findings with severity, description, and remediation.
+findings with severity, description, remediation, and CITATIONS.
+
+CITATION-FIRST PRINCIPLE (Sprint 5B):
+    Every gap finding now cites its regulatory source. Citations are
+    pulled from the RegulatoryReferenceRegistry — never fabricated.
 
 REGULATORY LANGUAGE SAFETY:
     This engine NEVER uses the words "compliant", "ready", "certified",
@@ -15,6 +19,7 @@ Usage:
     report = engine.evaluate("device-version-uuid")
     for finding in report.critical_findings:
         print(finding.description)
+        print(finding.citation_text)  # e.g., "[SOR/98-282, s.32(2)(c)]"
 """
 
 import copy
@@ -24,6 +29,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.core.regulatory_references import get_reference_registry
 from src.core.traceability import TraceabilityEngine, get_traceability_engine
 from src.persistence.twin_repository import TwinRepository, get_twin_repository
 from src.utils.logging import get_logger
@@ -42,6 +48,11 @@ class GapFinding(BaseModel):
 
     Each finding is self-contained: it has enough context to be
     understood without looking up the rule definition.
+
+    CITATION FIELDS (Sprint 5B):
+        - regulation_ref: Primary regulatory reference ID
+        - guidance_ref: Supporting guidance document reference ID
+        - citation_text: Pre-formatted citation (e.g., "[SOR/98-282, s.32(2)(c)]")
     """
 
     rule_id: str = Field(..., description="Rule that produced this finding")
@@ -55,12 +66,26 @@ class GapFinding(BaseModel):
     details: dict[str, Any] | None = Field(
         default=None, description="Additional structured details"
     )
+    # Citation fields (Sprint 5B)
+    regulation_ref: str | None = Field(
+        default=None, description="Primary regulation reference ID (e.g., 'SOR-98-282-S32-2-C')"
+    )
+    guidance_ref: str | None = Field(
+        default=None, description="Supporting guidance document ID (e.g., 'GUI-0102')"
+    )
+    citation_text: str | None = Field(
+        default=None, description="Formatted citation (e.g., '[SOR/98-282, s.32(2)(c)]')"
+    )
 
 
 class GapRuleDefinition(BaseModel):
     """Definition of a single gap detection rule.
 
     Rules are versioned so that changes to detection logic are traceable.
+
+    CITATION FIELDS (Sprint 5B):
+        - primary_reference: Main regulatory reference for this rule
+        - secondary_references: Additional supporting references
     """
 
     id: str = Field(..., description="Unique rule identifier (e.g. GAP-001)")
@@ -70,6 +95,13 @@ class GapRuleDefinition(BaseModel):
     category: GapCategory = Field(..., description="Gap category")
     version: int = Field(default=1, description="Rule version for traceability")
     enabled: bool = Field(default=True, description="Whether rule is active")
+    # Citation fields (Sprint 5B)
+    primary_reference: str | None = Field(
+        default=None, description="Primary regulatory reference ID (e.g., 'ISO-14971-2019-7')"
+    )
+    secondary_references: list[str] = Field(
+        default_factory=list, description="Additional reference IDs"
+    )
 
 
 class GapReport(BaseModel):
@@ -117,6 +149,7 @@ class GapDetectionEngine:
     """
 
     # Class-level rule definitions — template (each instance gets a copy)
+    # Sprint 5B: Each rule now has primary_reference and secondary_references
     _CLASS_RULE_DEFINITIONS: dict[str, GapRuleDefinition] = {
         "GAP-001": GapRuleDefinition(
             id="GAP-001",
@@ -124,7 +157,9 @@ class GapDetectionEngine:
             description="Hazards with no linked risk_control",
             severity="critical",
             category="coverage",
-            version=1,
+            version=2,  # Bumped for citation addition
+            primary_reference="ISO-14971-2019-7",
+            secondary_references=["ISO-14971-2019-7.1", "SOR-98-282-S10"],
         ),
         "GAP-002": GapRuleDefinition(
             id="GAP-002",
@@ -132,7 +167,9 @@ class GapDetectionEngine:
             description="Risk controls with no linked verification_test",
             severity="critical",
             category="coverage",
-            version=1,
+            version=2,
+            primary_reference="ISO-14971-2019-7.2",
+            secondary_references=["ISO-13485-2016-7.3.6", "SOR-98-282-S10"],
         ),
         "GAP-003": GapRuleDefinition(
             id="GAP-003",
@@ -140,7 +177,9 @@ class GapDetectionEngine:
             description="Claims with no linked evidence_item",
             severity="major",
             category="coverage",
-            version=1,
+            version=2,
+            primary_reference="SOR-98-282-S32-4",
+            secondary_references=["GUI-0102"],
         ),
         "GAP-004": GapRuleDefinition(
             id="GAP-004",
@@ -148,7 +187,9 @@ class GapDetectionEngine:
             description="Device version with no intended_use record",
             severity="critical",
             category="completeness",
-            version=1,
+            version=2,
+            primary_reference="SOR-98-282-S32-2-A",
+            secondary_references=["GUI-0098"],
         ),
         "GAP-005": GapRuleDefinition(
             id="GAP-005",
@@ -156,7 +197,9 @@ class GapDetectionEngine:
             description="Evidence items with strength assessed as weak or insufficient",
             severity="major",
             category="evidence_strength",
-            version=1,
+            version=2,
+            primary_reference="SOR-98-282-S32-4",
+            secondary_references=["GUI-0102"],
         ),
         "GAP-006": GapRuleDefinition(
             id="GAP-006",
@@ -164,7 +207,9 @@ class GapDetectionEngine:
             description="Claims with no linked verification or validation test",
             severity="major",
             category="coverage",
-            version=1,
+            version=2,
+            primary_reference="ISO-13485-2016-7.3.6",
+            secondary_references=["ISO-13485-2016-7.3.7"],
         ),
         "GAP-007": GapRuleDefinition(
             id="GAP-007",
@@ -172,15 +217,19 @@ class GapDetectionEngine:
             description="Device version with no submission_target record",
             severity="minor",
             category="completeness",
-            version=1,
+            version=2,
+            primary_reference="SOR-98-282-S26",
+            secondary_references=["GUI-0098"],
         ),
         "GAP-008": GapRuleDefinition(
             id="GAP-008",
             name="Unattested AI outputs",
-            description=("AI runs linked to artifacts that have not been " "attested by a human"),
+            description="AI runs linked to artifacts that have not been attested by a human",
             severity="major",
             category="consistency",
-            version=1,
+            version=2,
+            primary_reference="PLATFORM-PROVENANCE",
+            secondary_references=["PLATFORM-LANGUAGE"],
         ),
         "GAP-009": GapRuleDefinition(
             id="GAP-009",
@@ -188,7 +237,9 @@ class GapDetectionEngine:
             description="Device version with no labeling_assets",
             severity="major",
             category="completeness",
-            version=1,
+            version=2,
+            primary_reference="SOR-98-282-PART5",
+            secondary_references=["SOR-98-282-S21", "SOR-98-282-S22", "GUI-0015"],
         ),
         "GAP-010": GapRuleDefinition(
             id="GAP-010",
@@ -196,15 +247,19 @@ class GapDetectionEngine:
             description="Hazard to harm to control chain has breaks",
             severity="critical",
             category="consistency",
-            version=1,
+            version=2,
+            primary_reference="ISO-14971-2019-6",
+            secondary_references=["ISO-14971-2019-7"],
         ),
         "GAP-011": GapRuleDefinition(
             id="GAP-011",
             name="Draft evidence only",
-            description=("All evidence items for device version are in draft status"),
+            description="All evidence items for device version are in draft status",
             severity="major",
             category="evidence_strength",
-            version=1,
+            version=2,
+            primary_reference="SOR-98-282-S32-4",
+            secondary_references=["GUI-0102"],
         ),
         "GAP-012": GapRuleDefinition(
             id="GAP-012",
@@ -212,7 +267,9 @@ class GapDetectionEngine:
             description="Class III/IV device with no clinical evidence type",
             severity="critical",
             category="evidence_strength",
-            version=1,
+            version=2,
+            primary_reference="SOR-98-282-S32-2-C",
+            secondary_references=["GUI-0102"],
         ),
     }
 
@@ -237,6 +294,9 @@ class GapDetectionEngine:
         self.RULE_DEFINITIONS: dict[str, GapRuleDefinition] = copy.deepcopy(
             GapDetectionEngine._CLASS_RULE_DEFINITIONS
         )
+
+        # Citation registry for Sprint 5B
+        self._citation_registry = get_reference_registry()
 
         # Map rule IDs to evaluation methods
         self._rule_evaluators: dict[str, Callable[..., list[GapFinding]]] = {
@@ -359,6 +419,47 @@ class GapDetectionEngine:
         """
         return [r for r in self.RULE_DEFINITIONS.values() if r.enabled]
 
+    def _get_citation_for_rule(self, rule_id: str) -> tuple[str | None, str | None, str | None]:
+        """Get citation details for a rule from the registry.
+
+        Args:
+            rule_id: Rule identifier (e.g., "GAP-001")
+
+        Returns:
+            Tuple of (regulation_ref, guidance_ref, citation_text).
+            Values are None if reference not found in registry.
+        """
+        rule = self.RULE_DEFINITIONS.get(rule_id)
+        if not rule or not rule.primary_reference:
+            return None, None, None
+
+        primary_ref = self._citation_registry.get_by_id(rule.primary_reference)
+        if not primary_ref:
+            return rule.primary_reference, None, None
+
+        citation_text = self._citation_registry.format_citation(primary_ref)
+
+        # Determine if primary is regulation or guidance
+        regulation_ref = None
+        guidance_ref = None
+        if primary_ref.reference_type == "regulation":
+            regulation_ref = rule.primary_reference
+        elif primary_ref.reference_type == "guidance":
+            guidance_ref = rule.primary_reference
+        elif primary_ref.reference_type == "standard":
+            regulation_ref = rule.primary_reference  # Treat standards as regulation-level
+        else:
+            regulation_ref = rule.primary_reference  # Default to regulation
+
+        # Check secondary references for guidance
+        for sec_ref_id in rule.secondary_references:
+            sec_ref = self._citation_registry.get_by_id(sec_ref_id)
+            if sec_ref and sec_ref.reference_type == "guidance" and not guidance_ref:
+                guidance_ref = sec_ref_id
+                break
+
+        return regulation_ref, guidance_ref, citation_text
+
     # =========================================================================
     # Rule Implementations
     #
@@ -375,6 +476,7 @@ class GapDetectionEngine:
         """GAP-001: Find hazards with no linked risk_control."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-001"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-001")
 
         hazards = self._repository.get_by_device_version("hazards", device_version_id)
         for hazard in hazards:
@@ -406,6 +508,9 @@ class GapDetectionEngine:
                             "Create a risk control for this hazard and link "
                             "it using a 'mitigated_by' trace link."
                         ),
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
                     )
                 )
 
@@ -415,6 +520,7 @@ class GapDetectionEngine:
         """GAP-002: Find risk controls with no linked verification_test."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-002"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-002")
 
         hazards = self._repository.get_by_device_version("hazards", device_version_id)
         for hazard in hazards:
@@ -450,6 +556,9 @@ class GapDetectionEngine:
                                 "control and link it using a 'verified_by' "
                                 "trace link."
                             ),
+                            regulation_ref=reg_ref,
+                            guidance_ref=guid_ref,
+                            citation_text=citation,
                         )
                     )
 
@@ -459,6 +568,7 @@ class GapDetectionEngine:
         """GAP-003: Find claims with no linked evidence_item."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-003"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-003")
 
         claims = self._repository.get_by_device_version("claims", device_version_id)
         for claim in claims:
@@ -489,6 +599,9 @@ class GapDetectionEngine:
                             "'supported_by' trace links, or ingest new "
                             "evidence to support it."
                         ),
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
                     )
                 )
 
@@ -498,6 +611,7 @@ class GapDetectionEngine:
         """GAP-004: Check if device version has an intended_use record."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-004"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-004")
 
         intended_uses = self._repository.get_by_device_version("intended_uses", device_version_id)
 
@@ -520,6 +634,9 @@ class GapDetectionEngine:
                         "version specifying the statement, indications, "
                         "contraindications, and target population."
                     ),
+                    regulation_ref=reg_ref,
+                    guidance_ref=guid_ref,
+                    citation_text=citation,
                 )
             )
 
@@ -529,6 +646,7 @@ class GapDetectionEngine:
         """GAP-005: Find evidence items with weak or insufficient strength."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-005"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-005")
 
         evidence_items = self._repository.get_by_device_version("evidence_items", device_version_id)
         for item in evidence_items:
@@ -554,6 +672,9 @@ class GapDetectionEngine:
                             "data to support the linked claims or tests."
                         ),
                         details={"current_strength": strength},
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
                     )
                 )
 
@@ -563,6 +684,7 @@ class GapDetectionEngine:
         """GAP-006: Find claims with no linked verification or validation test."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-006"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-006")
 
         claims = self._repository.get_by_device_version("claims", device_version_id)
         for claim in claims:
@@ -615,6 +737,9 @@ class GapDetectionEngine:
                             "risk controls linked to verification or "
                             "validation tests."
                         ),
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
                     )
                 )
 
@@ -624,6 +749,7 @@ class GapDetectionEngine:
         """GAP-007: Check if device version has a submission target."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-007"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-007")
 
         targets = self._repository.get_by_device_version("submission_targets", device_version_id)
 
@@ -646,6 +772,9 @@ class GapDetectionEngine:
                         "regulatory body (e.g. Health Canada), submission "
                         "type (e.g. MDL), and target date."
                     ),
+                    regulation_ref=reg_ref,
+                    guidance_ref=guid_ref,
+                    citation_text=citation,
                 )
             )
 
@@ -660,6 +789,7 @@ class GapDetectionEngine:
         """
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-008"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-008")
 
         # Get unattested AI artifacts for this device version
         # Uses generic repository method; caller mocks this in tests
@@ -688,6 +818,9 @@ class GapDetectionEngine:
                         "attestation record (reviewed, approved, or "
                         "rejected)."
                     ),
+                    regulation_ref=reg_ref,
+                    guidance_ref=guid_ref,
+                    citation_text=citation,
                 )
             )
 
@@ -697,6 +830,7 @@ class GapDetectionEngine:
         """GAP-009: Check if device version has labeling assets."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-009"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-009")
 
         labeling = self._repository.get_by_device_version("labeling_assets", device_version_id)
 
@@ -719,6 +853,9 @@ class GapDetectionEngine:
                         "Instructions for Use (IFU), device label, "
                         "and packaging label."
                     ),
+                    regulation_ref=reg_ref,
+                    guidance_ref=guid_ref,
+                    citation_text=citation,
                 )
             )
 
@@ -728,6 +865,7 @@ class GapDetectionEngine:
         """GAP-010: Check hazard->harm->control chain for breaks."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-010"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-010")
 
         hazards = self._repository.get_by_device_version("hazards", device_version_id)
         for hazard in hazards:
@@ -767,6 +905,9 @@ class GapDetectionEngine:
                             "has_harm": has_harm,
                             "has_control": has_control,
                         },
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
                     )
                 )
             elif not has_harm:
@@ -792,6 +933,9 @@ class GapDetectionEngine:
                             "has_harm": has_harm,
                             "has_control": has_control,
                         },
+                        regulation_ref=reg_ref,
+                        guidance_ref=guid_ref,
+                        citation_text=citation,
                     )
                 )
 
@@ -801,6 +945,7 @@ class GapDetectionEngine:
         """GAP-011: Check if ALL evidence items are still in draft status."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-011"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-011")
 
         evidence_items = self._repository.get_by_device_version("evidence_items", device_version_id)
 
@@ -831,6 +976,9 @@ class GapDetectionEngine:
                         "'accepted'."
                     ),
                     details={"total_evidence": len(evidence_items)},
+                    regulation_ref=reg_ref,
+                    guidance_ref=guid_ref,
+                    citation_text=citation,
                 )
             )
 
@@ -840,6 +988,7 @@ class GapDetectionEngine:
         """GAP-012: Class III/IV devices must have clinical evidence."""
         findings: list[GapFinding] = []
         rule = self.RULE_DEFINITIONS["GAP-012"]
+        reg_ref, guid_ref, citation = self._get_citation_for_rule("GAP-012")
 
         # Get device version to check class
         device_version = self._repository.get_by_id("device_versions", device_version_id)
@@ -875,6 +1024,9 @@ class GapDetectionEngine:
                         "or substantial equivalence clinical data."
                     ),
                     details={"device_class": device_class},
+                    regulation_ref=reg_ref,
+                    guidance_ref=guid_ref,
+                    citation_text=citation,
                 )
             )
 
