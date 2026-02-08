@@ -2,9 +2,14 @@
 Traceability Engine — Core link management and chain traversal.
 
 Creates, validates, and queries regulatory trace links using the
-existing trace_links table. Supports the full regulatory chain:
+existing trace_links table. Supports:
 
+Risk Management Chain:
   claim → hazard → risk_control → verification_test → evidence_item
+
+Design Control Chain (ISO 13485 7.3):
+  design_input → design_output → design_verification → evidence_item
+  design_review → design_output
 
 Design:
   - VALID_RELATIONSHIPS dict enforces allowed link types
@@ -13,7 +18,7 @@ Design:
   - Chain traversal via recursive link following
   - Coverage reports per device version
 
-Sprint 2a — 2026-02-07
+Sprint 2a + 8B — 2026-02-07
 """
 
 from __future__ import annotations
@@ -42,6 +47,12 @@ SourceTargetType = Literal[
     "evidence_item",
     "artifact",
     "intended_use",
+    # Design control types (ISO 13485 7.3)
+    "design_input",
+    "design_output",
+    "design_review",
+    "design_verification",
+    "design_validation",
 ]
 
 RelationshipType = Literal[
@@ -53,6 +64,10 @@ RelationshipType = Literal[
     "verified_by",
     "validated_by",
     "documented_in",
+    # Design control relationships (ISO 13485 7.3)
+    "drives",
+    "satisfies",
+    "reviews",
 ]
 
 
@@ -154,6 +169,7 @@ class CoverageReport(BaseModel):
 # =========================================================================
 
 VALID_RELATIONSHIPS: dict[tuple[str, str], list[str]] = {
+    # Risk management chain
     ("claim", "hazard"): ["addresses"],
     ("claim", "evidence_item"): ["supported_by"],
     ("hazard", "harm"): ["causes", "may_cause"],
@@ -163,6 +179,14 @@ VALID_RELATIONSHIPS: dict[tuple[str, str], list[str]] = {
     ("verification_test", "evidence_item"): ["supported_by"],
     ("validation_test", "evidence_item"): ["supported_by"],
     ("evidence_item", "artifact"): ["documented_in"],
+    # Design control chain (ISO 13485 7.3)
+    ("design_input", "design_output"): ["drives"],
+    ("design_output", "design_input"): ["satisfies"],
+    ("design_output", "design_verification"): ["verified_by"],
+    ("design_output", "design_validation"): ["validated_by"],
+    ("design_review", "design_output"): ["reviews"],
+    ("design_verification", "evidence_item"): ["supported_by"],
+    ("design_validation", "evidence_item"): ["supported_by"],
 }
 
 

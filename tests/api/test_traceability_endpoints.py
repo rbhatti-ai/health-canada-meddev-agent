@@ -111,7 +111,8 @@ class TestValidRelationshipsEndpoint:
     def test_returns_9_relationship_types(self, api_client) -> None:
         response = api_client.get("/api/v1/trace-links/valid-relationships")
         data = response.json()
-        assert len(data["relationships"]) == 9
+        # 9 risk management + 7 design control = 16
+        assert len(data["relationships"]) == 16
 
     def test_claim_hazard_in_relationships(self, api_client) -> None:
         response = api_client.get("/api/v1/trace-links/valid-relationships")

@@ -31,7 +31,8 @@ class TestValidRelationships:
     def test_valid_relationships_has_expected_count(self) -> None:
         from src.core.traceability import VALID_RELATIONSHIPS
 
-        assert len(VALID_RELATIONSHIPS) == 9
+        # 9 risk management + 7 design control = 16
+        assert len(VALID_RELATIONSHIPS) == 16
 
     def test_claim_to_hazard_addresses(self) -> None:
         from src.core.traceability import VALID_RELATIONSHIPS
@@ -88,6 +89,50 @@ class TestValidRelationships:
 
         assert ("evidence_item", "artifact") in VALID_RELATIONSHIPS
         assert "documented_in" in VALID_RELATIONSHIPS[("evidence_item", "artifact")]
+
+    # Design control relationships (ISO 13485 7.3)
+
+    def test_design_input_to_design_output_drives(self) -> None:
+        from src.core.traceability import VALID_RELATIONSHIPS
+
+        assert ("design_input", "design_output") in VALID_RELATIONSHIPS
+        assert "drives" in VALID_RELATIONSHIPS[("design_input", "design_output")]
+
+    def test_design_output_to_design_input_satisfies(self) -> None:
+        from src.core.traceability import VALID_RELATIONSHIPS
+
+        assert ("design_output", "design_input") in VALID_RELATIONSHIPS
+        assert "satisfies" in VALID_RELATIONSHIPS[("design_output", "design_input")]
+
+    def test_design_output_to_verification_verified_by(self) -> None:
+        from src.core.traceability import VALID_RELATIONSHIPS
+
+        assert ("design_output", "design_verification") in VALID_RELATIONSHIPS
+        assert "verified_by" in VALID_RELATIONSHIPS[("design_output", "design_verification")]
+
+    def test_design_output_to_validation_validated_by(self) -> None:
+        from src.core.traceability import VALID_RELATIONSHIPS
+
+        assert ("design_output", "design_validation") in VALID_RELATIONSHIPS
+        assert "validated_by" in VALID_RELATIONSHIPS[("design_output", "design_validation")]
+
+    def test_design_review_to_output_reviews(self) -> None:
+        from src.core.traceability import VALID_RELATIONSHIPS
+
+        assert ("design_review", "design_output") in VALID_RELATIONSHIPS
+        assert "reviews" in VALID_RELATIONSHIPS[("design_review", "design_output")]
+
+    def test_design_verification_to_evidence_supported_by(self) -> None:
+        from src.core.traceability import VALID_RELATIONSHIPS
+
+        assert ("design_verification", "evidence_item") in VALID_RELATIONSHIPS
+        assert "supported_by" in VALID_RELATIONSHIPS[("design_verification", "evidence_item")]
+
+    def test_design_validation_to_evidence_supported_by(self) -> None:
+        from src.core.traceability import VALID_RELATIONSHIPS
+
+        assert ("design_validation", "evidence_item") in VALID_RELATIONSHIPS
+        assert "supported_by" in VALID_RELATIONSHIPS[("design_validation", "evidence_item")]
 
     def test_all_keys_are_string_tuples(self) -> None:
         from src.core.traceability import VALID_RELATIONSHIPS
@@ -213,7 +258,8 @@ class TestGetValidRelationships:
 
         result = TraceabilityEngine.get_valid_relationships()
         assert isinstance(result, dict)
-        assert len(result) == 9
+        # 9 risk management + 7 design control = 16
+        assert len(result) == 16
 
     def test_get_valid_relationships_is_copy(self) -> None:
         """Returned dict should be a copy, not the original."""
